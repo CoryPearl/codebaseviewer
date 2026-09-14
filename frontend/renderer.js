@@ -59,11 +59,10 @@ uniform float uAlpha;
 out vec4 outColor;
 void main(){
   if(uMode < .5 && vFace > .5) discard;
-  float edge = min(min(vUnit.x, 1.0-vUnit.x), min(vUnit.y, 1.0-vUnit.y));
+  vec2 face = vFace < .5 || vFace > 4.5 ? vUnit.xy : vFace < 2.5 ? vUnit.xz : vUnit.yz;
+  float edge = min(min(face.x, 1.0-face.x), min(face.y, 1.0-face.y));
   float border = smoothstep(0.0, fwidth(edge)*1.35 + .009, edge);
-  vec3 top = mix(vec3(.035,.043,.040), vColor.rgb, .105);
-  vec3 side = vColor.rgb * (vFace < 2.5 ? .61 : .46);
-  vec3 base = vFace < .5 ? top : side;
+  vec3 base = vec3(.11);
   vec3 stroke = mix(vColor.rgb, vec3(1.0), .07);
   outColor = vec4(mix(stroke, base, border), uAlpha);
 }`;
@@ -115,7 +114,7 @@ export class LandscapeRenderer {
 
   render(alpha=1) {
     const gl=this.gl; this.resize();
-    gl.clearColor(.11,.11,.11,this.mode==='3d'?0:1); gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);
+    gl.clearColor(.11,.11,.11,1); gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);
     gl.enable(gl.DEPTH_TEST); gl.depthFunc(gl.LEQUAL); gl.enable(gl.BLEND); gl.blendFunc(gl.SRC_ALPHA,gl.ONE_MINUS_SRC_ALPHA);
     gl.useProgram(this.program); gl.bindVertexArray(this.vao);
     const u=n=>gl.getUniformLocation(this.program,n);

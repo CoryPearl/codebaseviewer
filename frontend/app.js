@@ -434,9 +434,6 @@ function drawOverlay(){
     if(renderer.camera.zoom<=2.75)drawCodeOverview(ctx);
     else for(const {item,rect} of visible)drawCodeTexture(ctx,item,rect);
   }
-  if(selected&&currentMetric==='references'){
-    const selectedItem=layoutById.get(selected.id);if(selectedItem){const a=renderer.screenRect(selectedItem);const ax=a.x+a.w/2,ay=a.y+a.h/2;ctx.strokeStyle='rgba(246,213,83,.6)';ctx.lineWidth=1;for(const edge of (edgesByFile.get(selected.id)||[]).slice(0,70)){const id=edge.from===selected.id?edge.to:edge.from,bItem=layoutById.get(id);if(!bItem)continue;const b=renderer.screenRect(bItem);ctx.beginPath();ctx.moveTo(ax,ay);ctx.lineTo(b.x+b.w/2,b.y+b.h/2);ctx.stroke();}}
-  }
   if(renderer.mode==='2d'){
     const labelDepth=renderer.camera.zoom<1.15?1:renderer.camera.zoom<1.8?2:renderer.camera.zoom<3?3:4;
     for(const dir of directoryRects){
@@ -457,8 +454,27 @@ function drawOverlay(){
     ctx.fillStyle='rgba(11,13,12,.48)';ctx.fillRect(0,0,w,h);
     for(const {item,rect} of visible){if(!hitIds.has(item.id))continue;ctx.strokeStyle='#e8c74b';ctx.lineWidth=2;ctx.strokeRect(rect.x-.5,rect.y-.5,rect.w+1,rect.h+1);drawFileChip(ctx,item,rect,'#e8c74b',null,true);}
   }
+  drawSelectedConnections(ctx);
   if(selected){const item=layoutById.get(selected.id);if(item){const rect=renderer.screenRect(item);ctx.strokeStyle='#fff08a';ctx.lineWidth=2.5;ctx.strokeRect(rect.x-1,rect.y-1,rect.w+2,rect.h+2);drawFileChip(ctx,item,rect,'#fff08a',null,true);}}
   ctx.restore();
+}
+
+function drawSelectedConnections(ctx){
+  if(!selected)return;
+  const origin=layoutById.get(selected.id);if(!origin)return;
+  const center=item=>{if(renderer.mode==='3d')return renderer.project([item.x+item.w/2,item.y+item.h/2,item.height||0]);const rect=renderer.screenRect(item);return{x:rect.x+rect.w/2,y:rect.y+rect.h/2};};
+  const a=center(origin);if(!Number.isFinite(a.x)||!Number.isFinite(a.y))return;
+  const seen=new Set();ctx.save();ctx.beginPath();
+  for(const edge of edgesByFile.get(selected.id)||[]){
+    const id=edge.from===selected.id?edge.to:edge.from;
+    if(id===selected.id||seen.has(id))continue;seen.add(id);
+    const target=layoutById.get(id);if(!target)continue;
+    const b=center(target);if(!Number.isFinite(b.x)||!Number.isFinite(b.y))continue;
+    ctx.moveTo(a.x,a.y);ctx.lineTo(b.x,b.y);
+  }
+  // Batch every connection into two strokes: a dark outline keeps them legible over source text.
+  ctx.lineCap='round';ctx.strokeStyle='rgba(12,12,12,.85)';ctx.lineWidth=3.5;ctx.stroke();
+  ctx.strokeStyle='rgba(255,229,142,.9)';ctx.lineWidth=1.5;ctx.stroke();ctx.restore();
 }
 
 function codeWorldFont(item){
