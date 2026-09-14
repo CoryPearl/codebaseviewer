@@ -1,5 +1,7 @@
 # Codebase Viewer
 
+[Open the live Codebase Viewer](https://codebaseviewer.onrender.com)
+
 A framework-free browser codebase explorer inspired by Rik Arends' large-codebase landscape demo. It combines a small Rust indexing server with a vanilla JavaScript/WebGL2 frontend.
 
 ## Run
