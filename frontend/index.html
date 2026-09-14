@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-  <meta name="theme-color" content="#202221">
+  <meta name="theme-color" content="#181b1a">
   <meta name="description" content="Explore an entire codebase as a fast, searchable 2D and 3D landscape.">
   <title>Codebase Viewer</title>
   <link rel="icon" href="./favicon.svg" type="image/svg+xml">
@@ -12,6 +12,7 @@
 <body>
   <main id="app">
     <header class="toolbar" aria-label="Codebase controls">
+      <div class="brand" aria-label="Codebase Viewer"><svg viewBox="0 0 28 28" aria-hidden="true"><rect x="3" y="3" width="9" height="22" rx="2"/><rect x="16" y="3" width="9" height="9" rx="2"/><rect x="16" y="16" width="9" height="9" rx="2"/></svg><span>Codebase<span class="brand-sub">VIEWER</span></span></div>
       <div class="tool-group">
         <button class="tool primary" id="loadButton" title="Open codebase" aria-label="Open codebase"><svg viewBox="0 0 24 24"><path d="M3.5 7.5h6l2-2h4l2 2h3v11h-17z"/><path d="M3.5 9.5h17"/></svg></button>
         <button class="tool active" id="mapButton" title="Code landscape" aria-label="Code landscape"><svg viewBox="0 0 24 24"><rect x="3.5" y="3.5" width="17" height="17" rx="2"/><path d="M3.5 10h17M10 3.5v17M10 15h10.5"/></svg></button>
@@ -25,7 +26,7 @@
       </div>
       <span class="separator"></span>
       <div class="metric-switch" role="group" aria-label="Map metric">
-        <button class="metric active" data-metric="lines"><b>#</b> <span>Tokens</span></button>
+        <button class="metric active" data-metric="lines"><b>#</b> <span>Lines</span></button>
         <button class="metric" data-metric="references"><b>⌁</b> <span>References</span></button>
       </div>
       <button class="tool palette" id="paletteButton" title="Change palette" aria-label="Change palette"><svg viewBox="0 0 24 24"><path d="M20 13a8 8 0 1 0-8 7h1.5a1.5 1.5 0 0 0 0-3H12a2 2 0 0 1 0-4z"/><circle cx="7.5" cy="11" r="1"/><circle cx="10" cy="7.5" r="1"/><circle cx="14.5" cy="7.5" r="1"/><circle cx="17" cy="11" r="1"/></svg></button>
@@ -36,12 +37,12 @@
       </div>
       <label class="filter-wrap">
         <span class="sr-only">Filter files and symbols</span>
-        <input id="searchInput" type="search" placeholder="Filter" autocomplete="off" spellcheck="false">
+        <input id="searchInput" type="search" placeholder="Find a file or symbol…" autocomplete="off" spellcheck="false">
         <kbd>/</kbd>
       </label>
       <button class="tool" id="settingsButton" title="Performance details" aria-label="Performance details" aria-haspopup="dialog" aria-controls="settingsDialog"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19 13.5v-3l-2-.7-.7-1.7.9-1.9-2.1-2.1-1.9.9-1.7-.7-.7-2h-3l-.7 2-1.7.7-1.9-.9-2.1 2.1.9 1.9-.7 1.7-2 .7v3l2 .7.7 1.7-.9 1.9 2.1 2.1 1.9-.9 1.7.7.7 2h3l.7-2 1.7-.7 1.9.9 2.1-2.1-.9-1.9.7-1.7z"/></svg></button>
       <a class="tool tool-link github-link" href="https://github.com/CoryPearl/codebaseviewer" target="_blank" rel="noopener noreferrer" title="View source on GitHub" aria-label="View Codebase Viewer source on GitHub"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2.8a9.4 9.4 0 0 0-3 18.3c.5.1.7-.2.7-.5v-1.8c-2.8.6-3.4-1.2-3.4-1.2-.5-1.2-1.1-1.5-1.1-1.5-.9-.6.1-.6.1-.6 1 0 1.6 1 1.6 1 .9 1.6 2.4 1.1 2.9.9.1-.7.4-1.1.7-1.4-2.3-.3-4.7-1.1-4.7-5a3.9 3.9 0 0 1 1-2.7c-.1-.3-.4-1.3.1-2.7 0 0 .9-.3 2.8 1a9.6 9.6 0 0 1 5.1 0c2-1.3 2.8-1 2.8-1 .6 1.4.2 2.4.1 2.7a3.9 3.9 0 0 1 1 2.7c0 3.9-2.4 4.7-4.7 5 .4.3.7 1 .7 1.9v2.9c0 .3.2.6.7.5A9.4 9.4 0 0 0 12 2.8Z"/></svg></a>
-      <span class="live-dot" title="Indexer connected"></span>
+      <span class="live-dot" role="status" aria-label="Connecting to indexer" title="Connecting to indexer"></span>
     </header>
 
     <section class="workspace">
@@ -52,7 +53,8 @@
           <strong>No source files found</strong>
           <span>Try another folder or public GitHub repository.</span>
         </div>
-        <div class="progress-card" id="progressCard" hidden>
+        <div class="progress-card" id="progressCard" role="status" aria-live="polite" hidden>
+          <button type="button" class="progress-dismiss close-button" id="dismissProgress" aria-label="Dismiss notification">×</button>
           <div class="progress-copy">
             <strong id="progressTitle">Indexing codebase</strong>
             <span id="progressMessage">Discovering files…</span>
@@ -73,6 +75,7 @@
         </nav>
         <div class="fps" id="fps">— fps</div>
         <div class="legend" id="legend"></div>
+        <div class="canvas-controls" aria-label="Landscape navigation"><button type="button" id="zoomOutButton" title="Zoom out" aria-label="Zoom out">−</button><button type="button" id="fitButton" title="Fit codebase (F)" aria-label="Fit codebase"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 4H4v4m12-4h4v4M4 16v4h4m12-4v4h-4"/></svg></button><button type="button" id="zoomInButton" title="Zoom in" aria-label="Zoom in">+</button></div>
       </div>
 
       <aside class="inspector" id="inspector">
@@ -97,22 +100,22 @@
     </section>
   </main>
 
-  <dialog id="loadDialog">
+  <dialog id="loadDialog" aria-labelledby="loadTitle">
     <form method="dialog" class="dialog-shell">
       <div class="dialog-head">
-        <div><small>NEW LANDSCAPE</small><h1>Open a codebase</h1></div>
+        <div><small>YOUR NEXT PERSPECTIVE</small><h1 id="loadTitle">Open a codebase</h1><p class="dialog-description">See the big picture. Explore every detail.</p></div>
         <button class="close-button" value="cancel" aria-label="Close">×</button>
       </div>
       <button type="button" class="source-card" id="localFolderButton">
-        <span class="source-icon">⌑</span>
+        <span class="source-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7h7l2-2h4l2 2h3v12H3zM3 10h18"/></svg></span>
         <span><strong>Local folder</strong><small>Temporarily indexed by this server</small></span>
         <b>→</b>
       </button>
       <div class="source-card github-card">
-        <span class="source-icon">⌘</span>
-        <label><strong>Public GitHub repository</strong><small>Paste an owner/repository URL</small></label>
-        <div class="github-row"><input id="githubInput" placeholder="https://github.com/owner/repo"><button type="button" id="githubButton">Explore</button></div>
-        <p class="form-error" id="githubError"></p>
+        <span class="source-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="7" cy="5" r="2"/><circle cx="7" cy="19" r="2"/><circle cx="17" cy="5" r="2"/><path d="M7 7v10m10-10v3a4 4 0 0 1-4 4H7"/></svg></span>
+        <label for="githubInput"><strong>Public GitHub repository</strong><small>Explore a repository from its URL</small></label>
+        <div class="github-row"><input id="githubInput" type="url" autocomplete="off" spellcheck="false" aria-describedby="githubError" placeholder="https://github.com/owner/repo"><button type="button" id="githubButton">Explore →</button></div>
+        <p class="form-error" id="githubError" role="alert"></p>
       </div>
       <p class="dialog-foot">Files are held temporarily by this server and cleared when it restarts. Do not upload private code to a public deployment you do not control.</p>
     </form>
@@ -121,13 +124,17 @@
   <dialog id="settingsDialog" class="settings-dialog" aria-labelledby="settingsTitle">
     <form method="dialog" class="dialog-shell settings-shell">
       <div class="dialog-head">
-        <div><small>VIEWER SETTINGS</small><h1 id="settingsTitle">Renderer details</h1></div>
+        <div><small>MAKE IT YOURS</small><h1 id="settingsTitle">Workspace settings</h1><p class="dialog-description">A workspace that feels right for you.</p></div>
         <button class="close-button" value="cancel" aria-label="Close settings">×</button>
       </div>
       <div id="settingsContent"></div>
+      <div class="preference-row"><label for="paletteSelect">Landscape palette<small>Color-code the layers of your codebase</small></label><select id="paletteSelect"><option value="0">Botanical</option><option value="1">Prismatic</option><option value="2">Autumn</option></select></div>
+      <div class="preference-row"><label for="sourceToggle">Source text<small>Show code directly in the landscape</small></label><input type="checkbox" class="switch" id="sourceToggle" checked></div>
+      <div class="preference-row"><label for="fpsToggle">Performance monitor<small>Display frame rate on the canvas</small></label><input type="checkbox" class="switch" id="fpsToggle"></div>
+      <div class="shortcut-guide"><span>Keyboard essentials</span><div><kbd>/</kbd> Search <kbd>F</kbd> Fit landscape <kbd>Esc</kbd> Close</div></div>
       <div class="settings-note">
         <span class="settings-note-icon" aria-hidden="true">⌁</span>
-        <p><strong>Built for large landscapes</strong><small>The map uses a single instanced WebGL2 draw call. Labels and source textures are streamed progressively as you move.</small></p>
+        <p><strong>Room to explore</strong><small>Move from the whole codebase to a single line. Scroll to zoom; drag to move. In 3D, hold Shift while dragging to pan.</small></p>
       </div>
       <div class="settings-actions">
         <button class="dialog-button" value="close">Done</button>

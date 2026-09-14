@@ -396,7 +396,7 @@ function animateCameraTo(target){
 
 function cancelCameraAnimation(){cameraAnimation=null;}
 
-function switchTab(name){$$('.tab').forEach(tab=>tab.classList.toggle('active',tab.dataset.tab===name));$$('.panel').forEach(panel=>panel.classList.toggle('active',panel.id===`panel-${name}`));}
+function switchTab(name){$$('.tab').forEach(tab=>{const active=tab.dataset.tab===name;tab.classList.toggle('active',active);tab.setAttribute('aria-selected',String(active));tab.tabIndex=active?0:-1;});$$('.panel').forEach(panel=>panel.classList.toggle('active',panel.id===`panel-${name}`));}
 $$('.tab').forEach(tab=>tab.addEventListener('click',()=>switchTab(tab.dataset.tab)));
 
 function resizeOverlay(){const dpr=Math.min(devicePixelRatio||1,2),w=Math.floor(overlay.clientWidth*dpr),h=Math.floor(overlay.clientHeight*dpr);if(overlay.width!==w||overlay.height!==h){overlay.width=w;overlay.height=h;}overlayCtx.setTransform(dpr,0,0,dpr,0,0);}
@@ -578,7 +578,8 @@ $('#layersButton').addEventListener('click',()=>{showLegend=!showLegend;$('#lege
 $('#paletteButton').addEventListener('click',()=>{paletteIndex=(paletteIndex+1)%palettes.length;computeLayout();buildLegend();renderInspector();renderHistory();});
 const settingsDialog=$('#settingsDialog');
 $('#settingsButton').addEventListener('click',()=>{
-  $('#settingsContent').innerHTML=`<div class="settings-status"><span><i></i>WebGL2 active</span><small>${renderer.mode.toUpperCase()} landscape</small></div><div class="meta-grid settings-grid"><span>display refresh</span><b>${$('#fps').textContent.split('·')[0]}</b><span>render instances</span><b>${format(layoutItems.length)}</b><span>indexed files</span><b>${format(files.length)}</b><span>pixel ratio</span><b>${renderer.dpr.toFixed(2)}×</b><span>geometry uploads</span><b>static</b><span>camera updates</span><b>GPU uniforms</b></div>`;
+  $('#settingsContent').innerHTML=`<div class="settings-status"><span><i></i>Workspace preferences</span><small>${renderer.mode.toUpperCase()} VIEW</small></div>`;
+  $('#paletteSelect').value=String(paletteIndex);$('#sourceToggle').checked=showCode;$('#fpsToggle').checked=!$('#fps').hidden;
   if(!settingsDialog.open)settingsDialog.showModal();
 });
 settingsDialog.addEventListener('click',event=>{if(event.target===settingsDialog)settingsDialog.close();});
@@ -596,6 +597,10 @@ async function runSearch(){
 }
 document.addEventListener('keydown',event=>{
   if(event.defaultPrevented)return;
+  if(document.querySelector('dialog[open]'))return;
+  const editing=/INPUT|TEXTAREA|SELECT/.test(document.activeElement?.tagName)||document.activeElement?.isContentEditable;
+  if(editing&&event.key!=='Escape')return;
+  if(event.key.toLowerCase()==='f'&&!event.metaKey&&!event.ctrlKey){event.preventDefault();fitScene();return;}
   if(event.key==='/'&&document.activeElement!==$('#searchInput')){event.preventDefault();$('#searchInput').focus();}
   if(event.key==='Escape'){$('#searchInput').blur();$('#tooltip').hidden=true;}
   if((event.metaKey||event.ctrlKey)&&event.key==='o'){event.preventDefault();$('#loadDialog').showModal();}
@@ -651,10 +656,29 @@ async function checkBackend(){
   try{
     const response=await fetch(apiUrl('/api/health'));
     if(!response.ok)throw new Error(`HTTP ${response.status}`);
-    indicator.classList.add('connected');indicator.title=`Backend connected${API_BASE?` · ${API_BASE}`:''}`;
+    indicator.classList.add('connected');indicator.title='Indexer connected';indicator.setAttribute('aria-label','Indexer connected');
   }catch{
-    indicator.classList.remove('connected');indicator.title=`Backend unavailable${API_BASE?` · ${API_BASE}`:''}`;
+    indicator.classList.remove('connected');indicator.title='Indexer unavailable';indicator.setAttribute('aria-label','Indexer unavailable');
   }
 }
 
+// Preferences stay on this device and never contain repository or server details.
+function savePreferences(){try{localStorage.setItem('codebaseviewer.preferences',JSON.stringify({palette:paletteIndex,source:showCode,fps:!$('#fps').hidden}));}catch{}}
+try{const saved=JSON.parse(localStorage.getItem('codebaseviewer.preferences')||'{}');if(Number.isInteger(saved.palette)&&saved.palette>=0&&saved.palette<palettes.length)paletteIndex=saved.palette;if(typeof saved.source==='boolean')showCode=saved.source;$('#fps').hidden=saved.fps!==true;}catch{$('#fps').hidden=true;}
+$('#codeButton').classList.toggle('active',showCode);
+$('#paletteSelect').addEventListener('change',event=>{paletteIndex=Number(event.target.value);computeLayout();buildLegend();renderInspector();renderHistory();savePreferences();});
+$('#sourceToggle').addEventListener('change',event=>{showCode=event.target.checked;$('#codeButton').classList.toggle('active',showCode);dirty=true;savePreferences();});
+$('#fpsToggle').addEventListener('change',event=>{$('#fps').hidden=!event.target.checked;savePreferences();});
+$('#paletteButton').addEventListener('click',savePreferences);$('#codeButton').addEventListener('click',savePreferences);
+$('#dismissProgress').addEventListener('click',()=>{$('#progressCard').hidden=true;});
+$('#fitButton').addEventListener('click',fitScene);
+function zoomStep(direction){cancelCameraAnimation();if(renderer.mode==='3d')dolly3d(-direction*.22);else renderer.camera.zoom=Math.max(.25,Math.min(MAX_2D_ZOOM,renderer.camera.zoom*Math.exp(direction*.3)));dirty=true;}
+$('#zoomInButton').addEventListener('click',()=>zoomStep(1));$('#zoomOutButton').addEventListener('click',()=>zoomStep(-1));
+$$('.canvas-controls, .breadcrumb, .progress-card, .legend').forEach(control=>{['pointerdown','dblclick','wheel'].forEach(type=>control.addEventListener(type,event=>event.stopPropagation()));});
+dialog.addEventListener('click',event=>{if(event.target===dialog)dialog.close();});
+$$('.tab').forEach((tab,index)=>{tab.id=`tab-${tab.dataset.tab}`;tab.setAttribute('aria-controls',`panel-${tab.dataset.tab}`);$(`#panel-${tab.dataset.tab}`).setAttribute('aria-labelledby',tab.id);tab.addEventListener('keydown',event=>{if(!['ArrowLeft','ArrowRight','Home','End'].includes(event.key))return;event.preventDefault();const tabs=$$('.tab'),next=event.key==='Home'?0:event.key==='End'?tabs.length-1:(index+(event.key==='ArrowRight'?1:-1)+tabs.length)%tabs.length;switchTab(tabs[next].dataset.tab);tabs[next].focus();});});
+switchTab('inspector');
+new ResizeObserver(()=>{dirty=true;}).observe(viewport);
+$('#settingsButton').title='Workspace settings';$('#settingsButton').setAttribute('aria-label','Workspace settings');
+$('#settingsButton svg').innerHTML='<circle cx="12" cy="12" r="3"/><path d="m9.5 3-.5 2-2 1-2-.5L3 9l1.5 1.5v3L3 15l2 3.5 2-.5 2 1 .5 2h5l.5-2 2-1 2 .5 2-3.5-1.5-1.5v-3L21 9l-2-3.5-2 .5-2-1-.5-2z"/>';
 renderer.setData([]);fitScene();renderInspector();renderHistory();requestAnimationFrame(animate);checkBackend();
