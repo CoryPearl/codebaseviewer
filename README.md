@@ -25,7 +25,7 @@ The app opens with an empty workspace. Use the folder button to index a local di
 - Click: inspect a file
 - Double-click: focus a file
 - Click a colored coverage section: browse every file in that category
-- Up/Down in a coverage list: preview files with a smooth camera transition; Enter opens one
+- Click or use Up/Down in a coverage list: move smoothly to a file without selecting it
 - `/`: focus search
 - `Cmd/Ctrl+O`: open another codebase
 

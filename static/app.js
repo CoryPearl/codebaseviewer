@@ -37,7 +37,6 @@ let history=[];
 let searchHits=[];
 let expandedCoverageLayer=null;
 let coverageActiveIndex=-1;
-let coveragePreviewId=null;
 let cameraAnimation=null;
 let currentSnapshot=null;
 let currentName='';
@@ -161,7 +160,7 @@ function visibleLayout(w,h){
 
 function applySnapshot(snapshot){
   sourceQueue.length=0;queuedSources.clear();
-  files=snapshot.files||[];for(const file of files)file.symbols||=[];edges=snapshot.edges||[];currentName=snapshot.name||'codebase';currentSnapshot=snapshot.id||null;selected=null;history=[];searchHits=[];expandedCoverageLayer=null;coverageActiveIndex=-1;coveragePreviewId=null;cameraAnimation=null;
+  files=snapshot.files||[];for(const file of files)file.symbols||=[];edges=snapshot.edges||[];currentName=snapshot.name||'codebase';currentSnapshot=snapshot.id||null;selected=null;history=[];searchHits=[];expandedCoverageLayer=null;coverageActiveIndex=-1;cameraAnimation=null;
   fileById=new Map(files.map(file=>[file.id,file]));referenceDegree=new Map();edgesByFile=new Map();let known=0,inferred=0;for(const edge of edges){referenceDegree.set(edge.from,(referenceDegree.get(edge.from)||0)+1);referenceDegree.set(edge.to,(referenceDegree.get(edge.to)||0)+1);for(const id of [edge.from,edge.to]){const list=edgesByFile.get(id);if(list)list.push(edge);else edgesByFile.set(id,[edge]);}if(edge.confidence==='known')known++;else inferred++;}
   const layers=new Map();for(const file of files){const layer=file.layer in layerLabels?file.layer:'unknown';layers.set(layer,(layers.get(layer)||0)+1);}sceneStats={definitions:snapshot.definitions??files.reduce((n,file)=>n+(file.symbolCount||0),0),totalLines:snapshot.totalLines??files.reduce((n,file)=>n+file.lines,0),known,inferred,layers};
   computeLayout();fitScene();updateStats(snapshot);renderInspector();renderResults([]);renderHistory();
@@ -304,7 +303,6 @@ function mountSourceViewer(file){
 
 function selectFile(file,addHistory=true){
   selected=file||null;
-  coveragePreviewId=null;
   if(!file)coverageActiveIndex=-1;
   if(file&&addHistory){history=history.filter(item=>item.id!==file.id);history.unshift(file);history=history.slice(0,30);renderHistory();}
   $('#breadcrumbText').textContent=file?`${currentName}  ›  ${file.path}`:currentName;
@@ -315,10 +313,10 @@ function renderInspector(){
   const hint=$('#inspectHint'),content=$('#inspectContent');
   if(!files.length){hint.hidden=false;hint.textContent='Open a local folder or public GitHub repository to begin.';content.innerHTML='';return;}
   if(!selected){
-    hint.hidden=false;hint.textContent=expandedCoverageLayer?'Choose a file or use ↑ and ↓ to explore':'Select an entity on the map';
+    hint.hidden=false;hint.textContent=expandedCoverageLayer?'Click a file or use ↑ and ↓ to move around the map':'Select an entity on the map';
     const coverageRows=Object.entries(layerLabels).map(([key,label])=>`<button class="coverage-row${expandedCoverageLayer===key?' active':''}" type="button" data-coverage-layer="${key}" aria-expanded="${expandedCoverageLayer===key}"><i style="background:${palettes[paletteIndex][key]}"></i><span>${label}</span><small>${format(sceneStats.layers.get(key)||0)}</small><b aria-hidden="true">${expandedCoverageLayer===key?'−':'+'}</b></button>`).join('');
     const expandedLabel=layerLabels[expandedCoverageLayer];
-    content.innerHTML=`<div class="entity-title"><small>Coverage · ${escapeHtml(currentName)}</small><h2>${format(files.length)} indexed files</h2></div><div class="meta-grid"><span>known links</span><b>${format(sceneStats.known)}</b><span>inferred links</span><b>${format(sceneStats.inferred)}</b><span>definitions</span><b>${format(sceneStats.definitions)}</b><span>source lines</span><b>${format(sceneStats.totalLines)}</b></div><div class="section-title coverage-title"><span>Semantic coverage</span><small>Click a section</small></div><div class="coverage-menu">${coverageRows}</div>${expandedCoverageLayer?`<div class="coverage-list-head"><span>${escapeHtml(expandedLabel)}</span><small>↑ ↓ preview · Enter open</small></div><div class="coverage-file-list" id="coverageFileList" tabindex="0" role="listbox" aria-label="${escapeHtml(expandedLabel)} files"><div class="coverage-list-spacer" id="coverageListSpacer"></div><div class="coverage-list-window" id="coverageListWindow"></div></div>`:''}`;
+    content.innerHTML=`<div class="entity-title"><small>Coverage · ${escapeHtml(currentName)}</small><h2>${format(files.length)} indexed files</h2></div><div class="meta-grid"><span>known links</span><b>${format(sceneStats.known)}</b><span>inferred links</span><b>${format(sceneStats.inferred)}</b><span>definitions</span><b>${format(sceneStats.definitions)}</b><span>source lines</span><b>${format(sceneStats.totalLines)}</b></div><div class="section-title coverage-title"><span>Semantic coverage</span><small>Click a section</small></div><div class="coverage-menu">${coverageRows}</div>${expandedCoverageLayer?`<div class="coverage-list-head"><span>${escapeHtml(expandedLabel)}</span><small>Click or ↑ ↓ to navigate</small></div><div class="coverage-file-list" id="coverageFileList" tabindex="0" role="listbox" aria-label="${escapeHtml(expandedLabel)} files"><div class="coverage-list-spacer" id="coverageListSpacer"></div><div class="coverage-list-window" id="coverageListWindow"></div></div>`:''}`;
     content.querySelectorAll('[data-coverage-layer]').forEach(row=>row.addEventListener('click',()=>toggleCoverageLayer(row.dataset.coverageLayer)));
     if(expandedCoverageLayer)mountCoverageList(expandedCoverageLayer);
     return;
@@ -334,7 +332,7 @@ function renderInspector(){
 function normalizedLayer(file){return file.layer in layerLabels?file.layer:'unknown';}
 
 function toggleCoverageLayer(layer){
-  cancelCameraAnimation();expandedCoverageLayer=expandedCoverageLayer===layer?null:layer;coverageActiveIndex=-1;coveragePreviewId=null;renderInspector();dirty=true;
+  cancelCameraAnimation();expandedCoverageLayer=expandedCoverageLayer===layer?null:layer;coverageActiveIndex=-1;renderInspector();dirty=true;
   if(expandedCoverageLayer)requestAnimationFrame(()=>$('#coverageFileList')?.focus({preventScroll:true}));
 }
 
@@ -349,19 +347,19 @@ function mountCoverageList(layer){
     windowElement.innerHTML=layerFiles.slice(start,end).map((file,offset)=>{const index=start+offset;return`<button type="button" class="coverage-file${coverageActiveIndex===index?' active':''}" id="coverage-file-${file.id}" data-coverage-index="${index}" role="option" aria-selected="${coverageActiveIndex===index}"><i style="background:${palettes[paletteIndex][normalizedLayer(file)]}"></i><span><strong>${escapeHtml(file.name)}</strong><small>${escapeHtml(file.path)}</small></span><em>${format(file.lines)}</em></button>`;}).join('')||'<div class="coverage-empty">No files in this section.</div>';
   };
   const preview=index=>{
-    if(!layerFiles.length)return;coverageActiveIndex=Math.max(0,Math.min(layerFiles.length-1,index));const file=layerFiles[coverageActiveIndex];coveragePreviewId=file.id;list.setAttribute('aria-activedescendant',`coverage-file-${file.id}`);
+    if(!layerFiles.length)return;coverageActiveIndex=Math.max(0,Math.min(layerFiles.length-1,index));const file=layerFiles[coverageActiveIndex];list.setAttribute('aria-activedescendant',`coverage-file-${file.id}`);
     const top=coverageActiveIndex*rowHeight,bottom=top+rowHeight;if(top<list.scrollTop)list.scrollTop=top;else if(bottom>list.scrollTop+list.clientHeight)list.scrollTop=bottom-list.clientHeight;
     focusFile(file);renderWindow();dirty=true;
   };
   list.addEventListener('scroll',()=>{if(!frame)frame=requestAnimationFrame(renderWindow);},{passive:true});
-  list.addEventListener('click',event=>{const row=event.target.closest('[data-coverage-index]');if(!row)return;const index=Number(row.dataset.coverageIndex),file=layerFiles[index];if(file){coverageActiveIndex=index;focusFile(file);selectFile(file);}});
+  list.addEventListener('click',event=>{const row=event.target.closest('[data-coverage-index]');if(row)preview(Number(row.dataset.coverageIndex));});
   list.addEventListener('keydown',event=>{
     let next=coverageActiveIndex;
     if(event.key==='ArrowDown')next=next<0?0:next+1;
     else if(event.key==='ArrowUp')next=next<0?layerFiles.length-1:next-1;
     else if(event.key==='Home')next=0;
     else if(event.key==='End')next=layerFiles.length-1;
-    else if(event.key==='Enter'&&next>=0){const file=layerFiles[next];if(file){focusFile(file);selectFile(file);}event.preventDefault();return;}
+    else if(event.key==='Enter')next=next<0?0:next;
     else return;
     event.preventDefault();preview(next);
   });
@@ -453,8 +451,7 @@ function drawOverlay(){
     ctx.fillStyle='rgba(11,13,12,.48)';ctx.fillRect(0,0,w,h);
     for(const {item,rect} of visible){if(!hitIds.has(item.id))continue;ctx.strokeStyle='#e8c74b';ctx.lineWidth=2;ctx.strokeRect(rect.x-.5,rect.y-.5,rect.w+1,rect.h+1);drawFileChip(ctx,item,rect,'#e8c74b',null,true);}
   }
-  const focusedFile=selected||fileById.get(coveragePreviewId);
-  if(focusedFile){const item=layoutById.get(focusedFile.id);if(item){const rect=renderer.screenRect(item),accent=selected?'#fff08a':'#8ac9ff';ctx.strokeStyle=accent;ctx.lineWidth=2.5;ctx.strokeRect(rect.x-1,rect.y-1,rect.w+2,rect.h+2);drawFileChip(ctx,item,rect,accent,null,true);}}
+  if(selected){const item=layoutById.get(selected.id);if(item){const rect=renderer.screenRect(item);ctx.strokeStyle='#fff08a';ctx.lineWidth=2.5;ctx.strokeRect(rect.x-1,rect.y-1,rect.w+2,rect.h+2);drawFileChip(ctx,item,rect,'#fff08a',null,true);}}
   ctx.restore();
 }
 
