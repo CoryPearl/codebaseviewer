@@ -115,7 +115,7 @@ export class LandscapeRenderer {
 
   render(alpha=1) {
     const gl=this.gl; this.resize();
-    gl.clearColor(.105,.115,.11,this.mode==='3d'?0:1); gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);
+    gl.clearColor(.11,.11,.11,this.mode==='3d'?0:1); gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);
     gl.enable(gl.DEPTH_TEST); gl.depthFunc(gl.LEQUAL); gl.enable(gl.BLEND); gl.blendFunc(gl.SRC_ALPHA,gl.ONE_MINUS_SRC_ALPHA);
     gl.useProgram(this.program); gl.bindVertexArray(this.vao);
     const u=n=>gl.getUniformLocation(this.program,n);
