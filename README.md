@@ -45,8 +45,9 @@ The machine needs Git and a current Rust toolchain. Git is also required at runt
 Clone the public repository and build the optimized backend:
 
 ```bash
-git clone https://github.com/CoryPearl/codebaseviewer.git
-cd codebaseviewer/backend
+sudo install -d -o "$USER" -g "$(id -gn)" /opt/codebaseviewer
+git clone https://github.com/CoryPearl/codebaseviewer.git /opt/codebaseviewer
+cd /opt/codebaseviewer/backend
 cargo build --release --locked
 ```
 
@@ -79,6 +80,52 @@ nohup env PORT=3001 ./target/release/codebaseviewer > backend.log 2>&1 &
 ```
 
 Use a process supervisor such as systemd for a permanent installation.
+
+### Install as an Ubuntu systemd service
+
+The included unit expects the repository at `/opt/codebaseviewer`, runs the API as a dedicated unprivileged user, and reads configuration from `/etc/codebaseviewer.env`.
+
+Create the service account and install the configuration and unit:
+
+```bash
+id -u codebaseviewer >/dev/null 2>&1 || sudo useradd --system --home /nonexistent --shell /usr/sbin/nologin codebaseviewer
+sudo install -m 600 /opt/codebaseviewer/backend/.env.example /etc/codebaseviewer.env
+sudo install -m 644 /opt/codebaseviewer/backend/codebaseviewer.service /etc/systemd/system/codebaseviewer.service
+sudoedit /etc/codebaseviewer.env
+```
+
+Set `CORS_ORIGIN` in that environment file to your Vercel production URL. Then enable and start the service:
+
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable --now codebaseviewer
+sudo systemctl status codebaseviewer --no-pager
+```
+
+Check the API and follow its logs:
+
+```bash
+curl http://127.0.0.1:3001/api/health
+sudo journalctl -u codebaseviewer -f
+```
+
+After pulling and rebuilding an update, restart the service:
+
+```bash
+cd /opt/codebaseviewer
+git pull --ff-only
+cd backend
+cargo build --release --locked
+sudo systemctl restart codebaseviewer
+```
+
+Useful management commands:
+
+```bash
+sudo systemctl stop codebaseviewer
+sudo systemctl start codebaseviewer
+sudo systemctl disable --now codebaseviewer
+```
 
 The backend stores uploaded folders, cloned repositories, indexes, and snapshots in temporary memory and disk. They disappear when the process restarts. Do not expose it publicly without considering who may upload code and consume machine resources.
 
