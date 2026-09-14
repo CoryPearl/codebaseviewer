@@ -40,20 +40,45 @@ Because Vercel pages use HTTPS, the public backend should also use HTTPS. A plai
 
 ## Run the backend on another machine
 
-Copy or clone the repository, then run only the backend project:
+The machine needs Git and a current Rust toolchain. Git is also required at runtime when users load public GitHub repositories.
+
+Clone the public repository and build the optimized backend:
 
 ```bash
-cd backend
-PORT=4177 cargo run --release
+git clone https://github.com/CoryPearl/codebaseviewer.git
+cd codebaseviewer/backend
+cargo build --release --locked
 ```
 
-Expose that port through your firewall or reverse proxy and terminate HTTPS in front of it. The backend permits cross-origin API requests by default. To restrict it to your deployed frontend, set `CORS_ORIGIN` to the exact frontend origin:
+Run it on port 3001:
 
 ```bash
-CORS_ORIGIN=https://your-project.vercel.app PORT=4177 cargo run --release
+PORT=3001 ./target/release/codebaseviewer
 ```
 
-Keep the default `*` while using changing Vercel Preview URLs, or configure the exact production frontend origin when you only need Production.
+Verify the server from another terminal:
+
+```bash
+curl http://127.0.0.1:3001/api/health
+```
+
+The response should be `{"ok":true,"version":"0.1.0"}`.
+
+The backend listens on `0.0.0.0`, so expose port 3001 through your firewall or put an HTTPS reverse proxy in front of it. To restrict browser access to your production frontend, set `CORS_ORIGIN` to its exact origin:
+
+```bash
+CORS_ORIGIN=https://your-project.vercel.app PORT=3001 ./target/release/codebaseviewer
+```
+
+Keep the default `*` while using changing Vercel Preview URLs, or configure the exact production frontend origin when you only need Production. Set Vercel's `BACKEND_URL` to the backend's public HTTPS origin and redeploy the frontend.
+
+For a quick background process during testing:
+
+```bash
+nohup env PORT=3001 ./target/release/codebaseviewer > backend.log 2>&1 &
+```
+
+Use a process supervisor such as systemd for a permanent installation.
 
 The backend stores uploaded folders, cloned repositories, indexes, and snapshots in temporary memory and disk. They disappear when the process restarts. Do not expose it publicly without considering who may upload code and consume machine resources.
 
