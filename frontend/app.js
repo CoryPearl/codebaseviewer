@@ -328,9 +328,10 @@ function renderInspector(){
     return;
   }
   hint.hidden=true;
-  const related=(edgesByFile.get(selected.id)||[]).slice(0,30).map(edge=>({edge,file:fileById.get(edge.from===selected.id?edge.to:edge.from)})).filter(item=>item.file);
+  const connections=(edgesByFile.get(selected.id)||[]).map(edge=>({edge,file:fileById.get(edge.from===selected.id?edge.to:edge.from)})).filter(item=>item.file);
+  const related=connections.slice(0,30);
   const sourceStatus=selected.sourceLoading?'Loading complete file…':selected.sourceError?'Preview only':`${format(selected.lines)} lines`;
-  content.innerHTML=`<div class="entity-title"><small>${escapeHtml(selected.path)}</small><h2>${escapeHtml(selected.name)}</h2></div><div class="meta-grid"><span>language</span><b>${escapeHtml(selected.language)}</b><span>semantic layer</span><b>${escapeHtml(layerLabels[selected.layer]||'Other')}</b><span>source lines</span><b>${format(selected.lines)}</b><span>definitions</span><b>${format(selected.symbols.length)}</b><span>complexity</span><b>${format(selected.complexity)}</b><span>connections</span><b>${format(related.length)}</b></div>${related.length?`<div class="section-title">Relationships · ${related.length}</div>${related.map(({edge,file})=>`<div class="relation" data-id="${file.id}"><i></i><span>${escapeHtml(file.path)}</span><small>${edge.confidence}</small></div>`).join('')}`:''}<div class="section-title source-title"><span>Source</span><small>${sourceStatus}</small></div><div class="code-preview" id="sourceViewer" tabindex="0" aria-label="Scrollable source for ${escapeHtml(selected.name)}"><div class="source-spacer" id="sourceSpacer"></div><pre class="source-window" id="sourceWindow"></pre></div>`;
+  content.innerHTML=`<div class="entity-title"><small>${escapeHtml(selected.path)}</small><h2>${escapeHtml(selected.name)}</h2></div><div class="meta-grid"><span>language</span><b>${escapeHtml(selected.language)}</b><span>semantic layer</span><b>${escapeHtml(layerLabels[selected.layer]||'Other')}</b><span>source lines</span><b>${format(selected.lines)}</b><span>definitions</span><b>${format(selected.symbols.length)}</b><span>complexity</span><b>${format(selected.complexity)}</b><span>connections</span><b>${format(connections.length)}</b></div>${related.length?`<div class="section-title">Relationships · ${related.length}</div>${related.map(({edge,file})=>`<div class="relation" data-id="${file.id}"><i></i><span>${escapeHtml(file.path)}</span><small>${edge.confidence}</small></div>`).join('')}`:'<p class="panel-hint">No indexed file connections. External dependencies and unresolved references are not shown.</p>'}<div class="section-title source-title"><span>Source</span><small>${sourceStatus}</small></div><div class="code-preview" id="sourceViewer" tabindex="0" aria-label="Scrollable source for ${escapeHtml(selected.name)}"><div class="source-spacer" id="sourceSpacer"></div><pre class="source-window" id="sourceWindow"></pre></div>`;
   content.querySelectorAll('.relation[data-id]').forEach(row=>row.addEventListener('click',()=>selectFile(fileById.get(Number(row.dataset.id)))));
   mountSourceViewer(selected);
 }
@@ -429,6 +430,7 @@ function drawOverlay(){
   codeTexturesPending=false;
   codeTextureDeadline=performance.now()+5;
   const hitIds=new Set(searchHits.map(hit=>hit.entityId??hit.id)),occupied=[],visible=visibleLayout(w,h);visibleScreenItems=visible;
+  if(renderer.mode==='3d')drawGroundGrid(ctx);
   let labelCount=0;
   if(showCode&&renderer.mode==='2d'){
     if(renderer.camera.zoom<=2.75)drawCodeOverview(ctx);
@@ -455,7 +457,20 @@ function drawOverlay(){
     for(const {item,rect} of visible){if(!hitIds.has(item.id))continue;ctx.strokeStyle='#e8c74b';ctx.lineWidth=2;ctx.strokeRect(rect.x-.5,rect.y-.5,rect.w+1,rect.h+1);drawFileChip(ctx,item,rect,'#e8c74b',null,true);}
   }
   drawSelectedConnections(ctx);
-  if(selected){const item=layoutById.get(selected.id);if(item){const rect=renderer.screenRect(item);ctx.strokeStyle='#fff08a';ctx.lineWidth=2.5;ctx.strokeRect(rect.x-1,rect.y-1,rect.w+2,rect.h+2);drawFileChip(ctx,item,rect,'#fff08a',null,true);}}
+  if(selected){const item=layoutById.get(selected.id);if(item){const rect=renderer.screenRect(item);ctx.strokeStyle='#fff08a';ctx.lineWidth=2.5;if(renderer.mode==='3d'){ctx.beginPath();tileCorners(item).forEach((p,i)=>i?ctx.lineTo(p.x,p.y):ctx.moveTo(p.x,p.y));ctx.closePath();ctx.stroke();}else ctx.strokeRect(rect.x-1,rect.y-1,rect.w+2,rect.h+2);drawFileChip(ctx,item,rect,'#fff08a',null,true);}}
+  ctx.restore();
+}
+
+function tileCorners(item){return [[item.x,item.y],[item.x+item.w,item.y],[item.x+item.w,item.y+item.h],[item.x,item.y+item.h]].map(([x,y])=>renderer.project([x,y,item.height||0]));}
+function drawGroundGrid(ctx){
+  if(!layoutItems.length)return;
+  ctx.save();ctx.globalCompositeOperation='destination-over';ctx.strokeStyle='rgba(180,180,180,.12)';ctx.lineWidth=.75;ctx.beginPath();
+  for(let x=-200;x<=1200;x+=100){const a=renderer.project([x,-200,0]),b=renderer.project([x,900,0]);ctx.moveTo(a.x,a.y);ctx.lineTo(b.x,b.y);}
+  for(let y=-200;y<=900;y+=100){const a=renderer.project([-200,y,0]),b=renderer.project([1200,y,0]);ctx.moveTo(a.x,a.y);ctx.lineTo(b.x,b.y);}
+  ctx.stroke();
+  // Mask the grid underneath opaque tile tops so it never crosses source surfaces.
+  ctx.globalCompositeOperation='destination-out';ctx.fillStyle='#000';
+  for(const {item} of visibleScreenItems){ctx.beginPath();tileCorners(item).forEach((p,i)=>i?ctx.lineTo(p.x,p.y):ctx.moveTo(p.x,p.y));ctx.closePath();ctx.fill();}
   ctx.restore();
 }
 
@@ -552,7 +567,17 @@ function animate(now){
 
 function pickAt(x,y){
   if(renderer.mode==='2d'){const world=renderer.worldAt(x,y),cell=spatialGrid.get(`${Math.floor(world.x/spatialCell)}:${Math.floor(world.y/spatialCell)}`)||[];let match=null,area=Infinity;for(const item of cell){if(world.x>=item.x&&world.x<=item.x+item.w&&world.y>=item.y&&world.y<=item.y+item.h){const next=item.w*item.h;if(next<area){match=item;area=next;}}}return match;}
-  let best=null,distance=26;for(const {item,rect} of visibleScreenItems){const dx=x-(rect.x+rect.w/2),dy=y-(rect.y+rect.h/2),next=Math.hypot(dx,dy);if(next<distance){distance=next;best=item;}}return best;
+  let best=null,depth=Infinity;
+  for(const {item,rect} of visibleScreenItems){
+    if(x<rect.x||x>rect.x+rect.w||y<rect.y||y>rect.y+rect.h)continue;
+    const points=tileCorners(item);let inside=false;
+    for(let i=0,j=points.length-1;i<points.length;j=i++){
+      const a=points[i],b=points[j];if((a.y>y)!==(b.y>y)&&x<(b.x-a.x)*(y-a.y)/(b.y-a.y)+a.x)inside=!inside;
+    }
+    const d=renderer.project([item.x+item.w/2,item.y+item.h/2,item.height||0]).depth;
+    if(inside&&d<depth){depth=d;best=item;}
+  }
+  return best;
 }
 
 viewport.addEventListener('pointerdown',event=>{
@@ -709,7 +734,15 @@ $('#dismissProgress').addEventListener('click',()=>{$('#progressCard').hidden=tr
 $('#fitButton').addEventListener('click',fitScene);
 function zoomStep(direction){cancelCameraAnimation();if(renderer.mode==='3d')dolly3d(-direction*.22);else renderer.camera.zoom=Math.max(.25,Math.min(MAX_2D_ZOOM,renderer.camera.zoom*Math.exp(direction*.3)));dirty=true;}
 $('#zoomInButton').addEventListener('click',()=>zoomStep(1));$('#zoomOutButton').addEventListener('click',()=>zoomStep(-1));
-$$('.canvas-controls, .breadcrumb, .progress-card, .legend').forEach(control=>{['pointerdown','dblclick','wheel'].forEach(type=>control.addEventListener(type,event=>event.stopPropagation()));});
+$$('.canvas-controls, .breadcrumb, .progress-card, .legend, .camera-help').forEach(control=>{['pointerdown','dblclick','wheel'].forEach(type=>control.addEventListener(type,event=>event.stopPropagation()));});
+$$('[data-camera-preset]').forEach(button=>button.addEventListener('click',()=>{
+  const poses={isometric:{yaw:-.35,pitch:.78},top:{yaw:0,pitch:.045},front:{yaw:0,pitch:1.35}};
+  const from={...renderer.camera},to={...from,...poses[button.dataset.cameraPreset]};
+  cancelCameraAnimation();
+  if(matchMedia('(prefers-reduced-motion: reduce)').matches)Object.assign(renderer.camera,to);
+  else cameraAnimation={from,to,start:performance.now(),duration:450};
+  dirty=true;
+}));
 dialog.addEventListener('click',event=>{if(event.target===dialog)dialog.close();});
 $$('.tab').forEach((tab,index)=>{tab.id=`tab-${tab.dataset.tab}`;tab.setAttribute('aria-controls',`panel-${tab.dataset.tab}`);$(`#panel-${tab.dataset.tab}`).setAttribute('aria-labelledby',tab.id);tab.addEventListener('keydown',event=>{if(!['ArrowLeft','ArrowRight','Home','End'].includes(event.key))return;event.preventDefault();const tabs=$$('.tab'),next=event.key==='Home'?0:event.key==='End'?tabs.length-1:(index+(event.key==='ArrowRight'?1:-1)+tabs.length)%tabs.length;switchTab(tabs[next].dataset.tab);tabs[next].focus();});});
 switchTab('inspector');

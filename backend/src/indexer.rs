@@ -262,7 +262,10 @@ fn definition_patterns() -> Vec<(&'static str, Regex)> {
 
 fn import_patterns() -> Vec<Regex> {
     [
-        r#"(?:from|import)\s+[\"']?([^\"';\s]+)"#,
+        r#"from\s+[\"']?([^\"';\s]+)"#,
+        r#"import\s*[\"']([^\"']+)"#,
+        r#"^\s*import\s+([A-Za-z_][A-Za-z0-9_.]*)\s*(?:;|$|\bas\b)"#,
+        r#"import\s*\(\s*[\"']([^\"']+)"#,
         r#"require\s*\(\s*[\"']([^\"']+)"#,
         r#"#include\s*[<\"]([^>\"]+)"#,
         r#"(?:use|mod)\s+([A-Za-z_][A-Za-z0-9_:]*)"#,
@@ -274,39 +277,91 @@ fn import_patterns() -> Vec<Regex> {
 }
 
 fn link_files(files: &[FileRecord]) -> Vec<Edge> {
-    let mut lookup: HashMap<String, u32> = HashMap::new();
+    fn normalize(path: &str) -> String {
+        let mut parts = Vec::new();
+        for part in path.split('/') {
+            match part {
+                "" | "." => {}
+                ".." => {
+                    parts.pop();
+                }
+                _ => parts.push(part),
+            }
+        }
+        parts.join("/")
+    }
+    let mut exact = HashMap::new();
+    let mut lookup: HashMap<String, Option<u32>> = HashMap::new();
+    let mut add = |key: String, id: u32| {
+        lookup
+            .entry(key)
+            .and_modify(|value| {
+                if *value != Some(id) {
+                    *value = None;
+                }
+            })
+            .or_insert(Some(id));
+    };
     for file in files {
-        let path = file.path.to_ascii_lowercase();
-        lookup.insert(path.clone(), file.id);
-        lookup.insert(file.name.to_ascii_lowercase(), file.id);
+        let path = file.path.replace('\\', "/");
+        exact.insert(path.clone(), file.id);
+        add(path.clone(), file.id);
+        add(file.name.clone(), file.id);
         let extensionless = Path::new(&path)
             .with_extension("")
             .to_string_lossy()
             .replace('\\', "/");
-        lookup.entry(extensionless.clone()).or_insert(file.id);
+        add(extensionless.clone(), file.id);
+        if let Some(directory) = extensionless.strip_suffix("/index") {
+            add(directory.to_string(), file.id);
+        }
+        for (index, _) in path.match_indices('/') {
+            add(path[index + 1..].to_string(), file.id);
+        }
         for (index, _) in extensionless.match_indices('/') {
-            lookup
-                .entry(extensionless[index + 1..].to_string())
-                .or_insert(file.id);
+            add(extensionless[index + 1..].to_string(), file.id);
         }
         if let Some(stem) = Path::new(&file.name).file_stem().and_then(|v| v.to_str()) {
-            lookup.entry(stem.to_ascii_lowercase()).or_insert(file.id);
+            add(stem.to_string(), file.id);
         }
     }
     let mut seen = HashSet::new();
     let mut edges = Vec::new();
     for file in files {
         for import in &file.imports {
-            let normalized = import
-                .trim_matches(|c| c == '.' || c == '/' || c == ':')
-                .replace("::", "/")
-                .replace('.', "/")
-                .to_ascii_lowercase();
-            let basename = normalized.rsplit('/').next().unwrap_or(&normalized);
-            let target = lookup
-                .get(&normalized)
-                .or_else(|| lookup.get(basename))
-                .copied();
+            let import = import.replace('\\', "/");
+            let relative = normalize(&format!("{}/{}", file.directory, import));
+            let normalized = normalize(&import);
+            let resolve = |key: &str| {
+                exact
+                    .get(key)
+                    .copied()
+                    .or_else(|| lookup.get(key).copied().flatten())
+            };
+            let direct = resolve(&relative).or_else(|| {
+                if import.starts_with('.') {
+                    None
+                } else {
+                    resolve(&normalized)
+                }
+            });
+            let module = import.replace("::", "/");
+            let module = if matches!(file.language.as_str(), "Python" | "Java" | "C#") {
+                module.replace('.', "/")
+            } else {
+                module
+            };
+            let target = direct.or_else(|| {
+                if import.starts_with('.') {
+                    return None;
+                }
+                resolve(&module).or_else(|| {
+                    lookup
+                        .get(module.rsplit('/').next().unwrap_or(&module))
+                        .copied()
+                        .flatten()
+                })
+            });
             if let Some(to) = target
                 && to != file.id
                 && seen.insert((file.id, to))
@@ -315,7 +370,7 @@ fn link_files(files: &[FileRecord]) -> Vec<Edge> {
                     from: file.id,
                     to,
                     kind: "import".into(),
-                    confidence: if lookup.contains_key(&normalized) {
+                    confidence: if direct.is_some() {
                         "known".into()
                     } else {
                         "inferred".into()
@@ -397,6 +452,77 @@ fn layer_for(path: &str) -> &'static str {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn record(id: u32, path: &str, imports: &[&str]) -> FileRecord {
+        let (directory, name) = path.rsplit_once('/').unwrap_or(("", path));
+        FileRecord {
+            id,
+            path: path.into(),
+            name: name.into(),
+            directory: directory.into(),
+            extension: "js".into(),
+            language: "JavaScript".into(),
+            layer: "application".into(),
+            lines: 1,
+            bytes: 1,
+            complexity: 1,
+            preview: String::new(),
+            symbols: vec![],
+            imports: imports.iter().map(|s| s.to_string()).collect(),
+        }
+    }
+
+    #[test]
+    fn resolves_relative_imports_includes_and_index_files() {
+        let files = vec![
+            record(
+                1,
+                "src/main.js",
+                &[
+                    "./utils.js",
+                    "../include/config.h",
+                    "./widgets",
+                    "./utils.js",
+                ],
+            ),
+            record(2, "src/utils.js", &[]),
+            record(3, "include/config.h", &[]),
+            record(4, "src/widgets/index.ts", &[]),
+            record(5, "elsewhere/utils.js", &[]),
+        ];
+        let edges = link_files(&files);
+        assert_eq!(
+            edges.iter().map(|e| (e.from, e.to)).collect::<Vec<_>>(),
+            vec![(1, 2), (1, 3), (1, 4)]
+        );
+    }
+
+    #[test]
+    fn resolves_header_suffix_without_guessing_ambiguous_names() {
+        let files = vec![
+            record(1, "main.c", &["config.h", "utils.js", "missing.js"]),
+            record(2, "include/config.h", &[]),
+            record(3, "a/utils.js", &[]),
+            record(4, "b/utils.js", &[]),
+        ];
+        let edges = link_files(&files);
+        assert_eq!(
+            edges.iter().map(|e| (e.from, e.to)).collect::<Vec<_>>(),
+            vec![(1, 2)]
+        );
+    }
+
+    #[test]
+    fn extracts_named_javascript_import_target() {
+        let imports: Vec<_> = import_patterns()
+            .iter()
+            .filter_map(|re| {
+                re.captures("import { render } from './renderer.js';")
+                    .map(|c| c[1].to_string())
+            })
+            .collect();
+        assert_eq!(imports, vec!["./renderer.js"]);
+    }
 
     #[test]
     fn classifies_languages_and_layers() {
