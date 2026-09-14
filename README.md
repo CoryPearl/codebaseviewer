@@ -7,7 +7,6 @@ A framework-free browser codebase explorer inspired by Rik Arends' large-codebas
 - `frontend/`: static HTML, CSS, JavaScript, WebGL renderer, favicon, and Vercel build script
 - `backend/`: standalone Rust HTTP/SSE API and repository indexer
 - `vercel.json`: builds the frontend and injects the backend URL
-- `render.yaml`: optional Render Blueprint for the backend
 
 ## Run locally
 
@@ -32,7 +31,7 @@ The backend listens on `0.0.0.0`, reads `PORT` when provided, and accepts `--por
 
 1. Import this GitHub repository into Vercel and leave the project root at the repository root.
 2. Set the framework preset to **Other**.
-3. Add `BACKEND_URL` under **Project Settings → Environment Variables**. Use the public HTTPS origin of your backend, with no trailing slash—for example, `https://codebaseviewer.onrender.com`.
+3. Add `BACKEND_URL` under **Project Settings → Environment Variables**. Use the public HTTPS origin of your backend, with no trailing slash—for example, `https://api.example.com`.
 4. Enable the variable for Production and Preview as needed, then deploy.
 
 The root `vercel.json` runs `node frontend/build.mjs` and publishes `frontend/dist`. The build generates `config.js`, so changing `BACKEND_URL` requires a new deployment. This URL is public browser configuration, not a secret.
@@ -57,10 +56,6 @@ CORS_ORIGIN=https://your-project.vercel.app PORT=4177 cargo run --release
 Keep the default `*` while using changing Vercel Preview URLs, or configure the exact production frontend origin when you only need Production.
 
 The backend stores uploaded folders, cloned repositories, indexes, and snapshots in temporary memory and disk. They disappear when the process restarts. Do not expose it publicly without considering who may upload code and consume machine resources.
-
-## Optional backend deployment on Render
-
-The included Render Blueprint builds `backend/`, starts the optimized binary, and monitors `/api/health`. In Render, choose **New → Blueprint** and connect this repository.
 
 ## Controls
 
