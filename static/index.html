@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#202221">
+  <meta name="description" content="Explore an entire codebase as a fast, searchable 2D and 3D landscape.">
+  <title>Codebase Viewer</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <main id="app">
+    <header class="toolbar" aria-label="Codebase controls">
+      <div class="tool-group">
+        <button class="tool primary" id="loadButton" title="Open codebase" aria-label="Open codebase"><svg viewBox="0 0 24 24"><path d="M3.5 7.5h6l2-2h4l2 2h3v11h-17z"/><path d="M3.5 9.5h17"/></svg></button>
+        <button class="tool active" id="mapButton" title="Code landscape" aria-label="Code landscape"><svg viewBox="0 0 24 24"><rect x="3.5" y="3.5" width="17" height="17" rx="2"/><path d="M3.5 10h17M10 3.5v17M10 15h10.5"/></svg></button>
+        <button class="tool" id="layersButton" title="Semantic layers" aria-label="Semantic layers"><svg viewBox="0 0 24 24"><path d="m4 8 8-4 8 4-8 4zM4 12l8 4 8-4M4 16l8 4 8-4"/></svg></button>
+      </div>
+      <span class="separator"></span>
+      <div class="tool-group view-switch" role="group" aria-label="View mode">
+        <button class="tool active" data-view="2d" title="Flat map" aria-label="Flat map"><svg viewBox="0 0 24 24"><rect x="3.5" y="3.5" width="17" height="17" rx="1.5"/><path d="M3.5 11h17M12 3.5v17"/></svg></button>
+        <button class="tool" data-view="3d" title="3D landscape" aria-label="3D landscape"><svg viewBox="0 0 24 24"><path d="m12 3 8 4.5v9L12 21l-8-4.5v-9zM4 7.5l8 4.5 8-4.5M12 12v9"/></svg></button>
+        <button class="tool" id="codeButton" title="Toggle source texture" aria-label="Toggle source texture"><svg viewBox="0 0 24 24"><path d="M4 18 9 6l4 8 2-5 5 9z"/><path d="M4 20h16"/></svg></button>
+      </div>
+      <span class="separator"></span>
+      <div class="metric-switch" role="group" aria-label="Map metric">
+        <button class="metric active" data-metric="lines"><b>#</b> <span>Tokens</span></button>
+        <button class="metric" data-metric="references"><b>⌁</b> <span>References</span></button>
+      </div>
+      <button class="tool palette" id="paletteButton" title="Change palette" aria-label="Change palette"><svg viewBox="0 0 24 24"><path d="M20 13a8 8 0 1 0-8 7h1.5a1.5 1.5 0 0 0 0-3H12a2 2 0 0 1 0-4z"/><circle cx="7.5" cy="11" r="1"/><circle cx="10" cy="7.5" r="1"/><circle cx="14.5" cy="7.5" r="1"/><circle cx="17" cy="11" r="1"/></svg></button>
+      <div class="toolbar-spacer"></div>
+      <div class="scene-stats" id="sceneStats" aria-live="polite">
+        <span id="headlineStats">No codebase loaded</span>
+        <small id="fileStats">Open a folder or public repository</small>
+      </div>
+      <label class="filter-wrap">
+        <span class="sr-only">Filter files and symbols</span>
+        <input id="searchInput" type="search" placeholder="Filter" autocomplete="off" spellcheck="false">
+        <kbd>/</kbd>
+      </label>
+      <button class="tool" id="settingsButton" title="Performance details" aria-label="Performance details"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19 13.5v-3l-2-.7-.7-1.7.9-1.9-2.1-2.1-1.9.9-1.7-.7-.7-2h-3l-.7 2-1.7.7-1.9-.9-2.1 2.1.9 1.9-.7 1.7-2 .7v3l2 .7.7 1.7-.9 1.9 2.1 2.1 1.9-.9 1.7.7.7 2h3l.7-2 1.7-.7 1.9.9 2.1-2.1-.9-1.9.7-1.7z"/></svg></button>
+      <span class="live-dot" title="Indexer connected"></span>
+    </header>
+
+    <section class="workspace">
+      <div class="viewport" id="viewport">
+        <canvas id="glCanvas"></canvas>
+        <canvas id="overlayCanvas"></canvas>
+        <div class="empty-state" id="emptyState" hidden>
+          <strong>No source files found</strong>
+          <span>Try another folder or public GitHub repository.</span>
+        </div>
+        <div class="progress-card" id="progressCard" hidden>
+          <div class="progress-copy">
+            <strong id="progressTitle">Indexing codebase</strong>
+            <span id="progressMessage">Discovering files…</span>
+          </div>
+          <div class="progress-track"><i id="progressFill"></i></div>
+          <span class="progress-count" id="progressCount"></span>
+        </div>
+        <div class="tooltip" id="tooltip" hidden></div>
+        <div class="camera-help" id="cameraHelp" hidden>
+          <span><b>Drag</b> orbit</span>
+          <span><b>Shift + drag</b> pan</span>
+          <span><b>Scroll</b> dolly</span>
+          <span><b>F</b> reset</span>
+        </div>
+        <nav class="breadcrumb" id="breadcrumb" aria-label="Selected file path">
+          <button id="homeButton" aria-label="Fit entire codebase">←</button>
+          <span id="breadcrumbText">No codebase loaded</span>
+        </nav>
+        <div class="fps" id="fps">— fps</div>
+        <div class="legend" id="legend"></div>
+      </div>
+
+      <aside class="inspector" id="inspector">
+        <div class="tabs" role="tablist">
+          <button class="tab active" data-tab="inspector" role="tab">Inspector</button>
+          <button class="tab" data-tab="results" role="tab">Results <span id="resultBadge"></span></button>
+          <button class="tab" data-tab="history" role="tab">History</button>
+        </div>
+        <section class="panel active" id="panel-inspector" role="tabpanel">
+          <p class="panel-hint" id="inspectHint">Select an entity on the map</p>
+          <div id="inspectContent"></div>
+        </section>
+        <section class="panel" id="panel-results" role="tabpanel">
+          <div class="result-summary" id="resultSummary">Type in the filter to search files and symbols.</div>
+          <div class="result-list" id="resultList"></div>
+        </section>
+        <section class="panel" id="panel-history" role="tabpanel">
+          <div class="result-summary">Recently inspected</div>
+          <div class="result-list" id="historyList"></div>
+        </section>
+      </aside>
+    </section>
+  </main>
+
+  <dialog id="loadDialog">
+    <form method="dialog" class="dialog-shell">
+      <div class="dialog-head">
+        <div><small>NEW LANDSCAPE</small><h1>Open a codebase</h1></div>
+        <button class="close-button" value="cancel" aria-label="Close">×</button>
+      </div>
+      <button type="button" class="source-card" id="localFolderButton">
+        <span class="source-icon">⌑</span>
+        <span><strong>Local folder</strong><small>Temporarily indexed by this server</small></span>
+        <b>→</b>
+      </button>
+      <div class="source-card github-card">
+        <span class="source-icon">⌘</span>
+        <label><strong>Public GitHub repository</strong><small>Paste an owner/repository URL</small></label>
+        <div class="github-row"><input id="githubInput" placeholder="https://github.com/owner/repo"><button type="button" id="githubButton">Explore</button></div>
+        <p class="form-error" id="githubError"></p>
+      </div>
+      <p class="dialog-foot">Files are held temporarily by this server and cleared when it restarts. Do not upload private code to a public deployment you do not control.</p>
+    </form>
+  </dialog>
+  <input id="folderFallback" type="file" webkitdirectory multiple hidden>
+
+  <script type="module" src="/app.js"></script>
+</body>
+</html>
