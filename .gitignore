@@ -1,4 +1,7 @@
 /target/
+/backend/target/
+/frontend/dist/
+/.vercel/
 /.codebaseviewer-cache/
 .DS_Store
 .env

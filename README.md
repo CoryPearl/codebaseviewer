@@ -1,18 +1,66 @@
 # Codebase Viewer
 
-[Open the live Codebase Viewer](https://codebaseviewer.onrender.com)
+A framework-free browser codebase explorer inspired by Rik Arends' large-codebase landscape demo. The repository is split into a vanilla JavaScript/WebGL2 frontend and a standalone Rust API backend.
 
-A framework-free browser codebase explorer inspired by Rik Arends' large-codebase landscape demo. It combines a small Rust indexing server with a vanilla JavaScript/WebGL2 frontend.
+## Repository layout
 
-## Run
+- `frontend/`: static HTML, CSS, JavaScript, WebGL renderer, favicon, and Vercel build script
+- `backend/`: standalone Rust HTTP/SSE API and repository indexer
+- `vercel.json`: builds the frontend and injects the backend URL
+- `render.yaml`: optional Render Blueprint for the backend
+
+## Run locally
+
+Start the backend:
 
 ```bash
-cargo run --release -- --open
+cd backend
+cargo run --release
 ```
 
-Or open `http://127.0.0.1:4177` yourself. The server listens on `0.0.0.0`, reads the `PORT` environment variable when provided, and accepts `--port 8080` as an explicit override.
+In another terminal, serve the frontend:
 
-The app opens with an empty workspace. Use the folder button to index a local directory, or paste the URL of a public GitHub repository.
+```bash
+python3 -m http.server 4178 --directory frontend
+```
+
+Open `http://127.0.0.1:4178`. The committed development config points the frontend to `http://127.0.0.1:4177`.
+
+The backend listens on `0.0.0.0`, reads `PORT` when provided, and accepts `--port 8080` as an explicit override.
+
+## Deploy the frontend on Vercel
+
+1. Import this GitHub repository into Vercel and leave the project root at the repository root.
+2. Set the framework preset to **Other**.
+3. Add `BACKEND_URL` under **Project Settings → Environment Variables**. Use the public HTTPS origin of your backend, with no trailing slash—for example, `https://codebaseviewer.onrender.com`.
+4. Enable the variable for Production and Preview as needed, then deploy.
+
+The root `vercel.json` runs `node frontend/build.mjs` and publishes `frontend/dist`. The build generates `config.js`, so changing `BACKEND_URL` requires a new deployment. This URL is public browser configuration, not a secret.
+
+Because Vercel pages use HTTPS, the public backend should also use HTTPS. A plain `http://` backend will be blocked by browsers as mixed content.
+
+## Run the backend on another machine
+
+Copy or clone the repository, then run only the backend project:
+
+```bash
+cd backend
+PORT=4177 cargo run --release
+```
+
+Expose that port through your firewall or reverse proxy and terminate HTTPS in front of it. The backend permits cross-origin API requests by default. To restrict it to your deployed frontend, set `CORS_ORIGIN` to the exact frontend origin:
+
+```bash
+CORS_ORIGIN=https://your-project.vercel.app PORT=4177 cargo run --release
+```
+
+Keep the default `*` while using changing Vercel Preview URLs, or configure the exact production frontend origin when you only need Production.
+
+The backend stores uploaded folders, cloned repositories, indexes, and snapshots in temporary memory and disk. They disappear when the process restarts. Do not expose it publicly without considering who may upload code and consume machine resources.
+
+## Optional backend deployment on Render
+
+The included Render Blueprint builds `backend/`, starts the optimized binary, and monitors `/api/health`. In Render, choose **New → Blueprint** and connect this repository.
 
 ## Controls
 
@@ -28,20 +76,5 @@ The app opens with an empty workspace. Use the folder button to index a local di
 - Click or use Up/Down in a coverage list: move smoothly to a file without selecting it
 - `/`: focus search
 - `Cmd/Ctrl+O`: open another codebase
-
-## Deploy on Render
-
-This repository includes a Render Blueprint. Push it to GitHub, then in the Render dashboard choose **New → Blueprint** and connect this repository. Render will build the optimized Rust binary, start it as a free web service, and monitor `/api/health`.
-
-The server already binds to `0.0.0.0` and reads Render's `PORT` environment variable. Uploaded folders, cloned repositories, indexes, and snapshots use temporary memory and disk. They disappear whenever the free service sleeps, restarts, or redeploys. Do not upload private source code to a public instance you do not control.
-
-The free Render instance has limited CPU and memory. It is appropriate for demos and moderate repositories; the five-million-line target may require a larger instance depending on file count and source complexity.
-
-## Architecture
-
-- `src/`: framework-free HTTP/SSE server and repository indexer
-- `static/renderer.js`: instanced WebGL2 2D/3D renderer
-- `static/app.js`: treemap, interaction, upload, search, and inspector UI
-- Temporary folder uploads and GitHub clones are written under the server operating system's temporary directory and are not persisted by the project.
 
 Supported dependency-aware language families are JavaScript/TypeScript, Python, Rust, Go, C/C++, Java, and C#. Other readable files still appear with generic metadata.

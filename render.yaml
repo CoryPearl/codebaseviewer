@@ -3,6 +3,6 @@ services:
     name: codebaseviewer
     runtime: rust
     plan: free
-    buildCommand: cargo build --release --locked
-    startCommand: ./target/release/codebaseviewer
+    buildCommand: cd backend && cargo build --release --locked
+    startCommand: ./backend/target/release/codebaseviewer
     healthCheckPath: /api/health

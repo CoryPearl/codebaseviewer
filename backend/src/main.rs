@@ -14,11 +14,6 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-const INDEX_HTML: &[u8] = include_bytes!("../static/index.html");
-const STYLES_CSS: &[u8] = include_bytes!("../static/styles.css");
-const APP_JS: &[u8] = include_bytes!("../static/app.js");
-const RENDERER_JS: &[u8] = include_bytes!("../static/renderer.js");
-
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct Job {
@@ -116,8 +111,8 @@ fn main() -> io::Result<()> {
 
     let listener = TcpListener::bind(("0.0.0.0", port))?;
     let state = Arc::new(State::default());
-    println!("Codebase Viewer is listening on http://0.0.0.0:{port}");
-    println!("Open http://127.0.0.1:{port} on this machine");
+    println!("Codebase Viewer API is listening on http://0.0.0.0:{port}");
+    println!("Health check: http://127.0.0.1:{port}/api/health");
     if open {
         let _ = Command::new("open")
             .arg(format!("http://127.0.0.1:{port}"))
@@ -169,16 +164,13 @@ fn handle_connection(mut stream: TcpStream, state: Arc<State>) -> io::Result<()>
     let (path, query) = target.split_once('?').unwrap_or((&target, ""));
 
     match (method.as_str(), path) {
-        ("GET", "/") => respond(&mut stream, 200, "text/html; charset=utf-8", INDEX_HTML),
-        ("HEAD", "/") => respond(&mut stream, 200, "text/html; charset=utf-8", &[]),
-        ("GET", "/styles.css") => respond(&mut stream, 200, "text/css; charset=utf-8", STYLES_CSS),
-        ("GET", "/app.js") => respond(&mut stream, 200, "text/javascript; charset=utf-8", APP_JS),
-        ("GET", "/renderer.js") => respond(
+        ("OPTIONS", _) => respond(&mut stream, 204, "text/plain; charset=utf-8", &[]),
+        ("GET", "/") => json_response(
             &mut stream,
             200,
-            "text/javascript; charset=utf-8",
-            RENDERER_JS,
+            &json!({"service": "codebaseviewer-api", "health": "/api/health"}),
         ),
+        ("HEAD", "/") => respond(&mut stream, 200, "application/json; charset=utf-8", &[]),
         ("GET", "/api/health") => {
             json_response(&mut stream, 200, &json!({"ok": true, "version": "0.1.0"}))
         }
@@ -482,9 +474,10 @@ fn handle_snapshot_route(
 }
 
 fn stream_job_events(stream: &mut TcpStream, state: Arc<State>, id: &str) -> io::Result<()> {
+    let origin = cors_origin();
     write!(
         stream,
-        "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nCache-Control: no-cache\r\nConnection: close\r\nAccess-Control-Allow-Origin: *\r\n\r\n"
+        "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nCache-Control: no-cache\r\nConnection: close\r\nAccess-Control-Allow-Origin: {origin}\r\n\r\n"
     )?;
     stream.flush()?;
     let mut last = String::new();
@@ -621,20 +614,31 @@ fn unique_id(prefix: &str) -> String {
 }
 
 fn respond(stream: &mut TcpStream, status: u16, content_type: &str, body: &[u8]) -> io::Result<()> {
+    let origin = cors_origin();
     let phrase = match status {
         200 => "OK",
         201 => "Created",
         202 => "Accepted",
+        204 => "No Content",
         400 => "Bad Request",
         404 => "Not Found",
         _ => "Error",
     };
     write!(
         stream,
-        "HTTP/1.1 {status} {phrase}\r\nContent-Type: {content_type}\r\nContent-Length: {}\r\nCache-Control: no-store\r\nX-Content-Type-Options: nosniff\r\nAccess-Control-Allow-Origin: *\r\nConnection: close\r\n\r\n",
+        "HTTP/1.1 {status} {phrase}\r\nContent-Type: {content_type}\r\nContent-Length: {}\r\nCache-Control: no-store\r\nX-Content-Type-Options: nosniff\r\nAccess-Control-Allow-Origin: {origin}\r\nAccess-Control-Allow-Methods: GET, HEAD, POST, OPTIONS\r\nAccess-Control-Allow-Headers: Content-Type\r\nAccess-Control-Max-Age: 86400\r\nConnection: close\r\n\r\n",
         body.len()
     )?;
     stream.write_all(body)
+}
+
+fn cors_origin() -> String {
+    std::env::var("CORS_ORIGIN")
+        .ok()
+        .filter(|value| {
+            !value.is_empty() && !value.bytes().any(|byte| matches!(byte, b'\r' | b'\n'))
+        })
+        .unwrap_or_else(|| "*".into())
 }
 
 fn json_response<T: Serialize>(stream: &mut TcpStream, status: u16, value: &T) -> io::Result<()> {

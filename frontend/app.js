@@ -1,5 +1,8 @@
 import { LandscapeRenderer } from './renderer.js';
 
+const configuredBackend=window.CODEBASEVIEWER_CONFIG?.backendUrl?.trim()||'';
+const API_BASE=configuredBackend.replace(/\/+$/,'');
+const apiUrl=path=>`${API_BASE}${path}`;
 const $ = selector => document.querySelector(selector);
 const $$ = selector => [...document.querySelectorAll(selector)];
 const glCanvas = $('#glCanvas');
@@ -259,7 +262,7 @@ async function loadFileDetails(file){
   if(!file||!currentSnapshot||file.detailsLoaded||file.sourceLoading)return;
   const snapshotId=currentSnapshot;file.sourceLoading=true;
   try{
-    const response=await fetch(`/api/snapshots/${snapshotId}/entities/${file.id}`);
+    const response=await fetch(apiUrl(`/api/snapshots/${snapshotId}/entities/${file.id}`));
     if(!response.ok)throw new Error('Could not load complete file');
     const payload=await response.json();if(currentSnapshot!==snapshotId)return;
     for(const record of [fileById.get(file.id),layoutById.get(file.id)])if(record){record.symbols=payload.symbols||record.symbols||[];record.symbolCount=payload.symbols?.length??record.symbolCount??0;record.detailsLoaded=true;}
@@ -271,7 +274,7 @@ async function loadSourceChunk(file,start,limit=600){
   if(!currentSnapshot)return[];file._sourceChunks||=new Map();file._sourceRequests||=new Map();
   if(file._sourceChunks.has(start))return file._sourceChunks.get(start);
   if(file._sourceRequests.has(start))return file._sourceRequests.get(start);
-  const snapshotId=currentSnapshot,promise=fetch(`/api/snapshots/${snapshotId}/entities/${file.id}/source?start=${start}&limit=${limit}`).then(response=>{if(!response.ok)throw new Error('Could not load source lines');return response.json();}).then(payload=>{if(currentSnapshot!==snapshotId)return[];file._sourceChunks.set(start,payload.lines||[]);return payload.lines||[];}).catch(()=>[]).finally(()=>file._sourceRequests.delete(start));
+  const snapshotId=currentSnapshot,promise=fetch(apiUrl(`/api/snapshots/${snapshotId}/entities/${file.id}/source?start=${start}&limit=${limit}`)).then(response=>{if(!response.ok)throw new Error('Could not load source lines');return response.json();}).then(payload=>{if(currentSnapshot!==snapshotId)return[];file._sourceChunks.set(start,payload.lines||[]);return payload.lines||[];}).catch(()=>[]).finally(()=>file._sourceRequests.delete(start));
   file._sourceRequests.set(start,promise);return promise;
 }
 
@@ -587,7 +590,7 @@ $('#searchInput').addEventListener('input',()=>{clearTimeout(searchTimer);search
 async function runSearch(){
   const query=$('#searchInput').value.trim();if(query.length<2){renderResults([]);return;}
   let hits=[];
-  if(currentSnapshot){try{const response=await fetch(`/api/snapshots/${currentSnapshot}/search?q=${encodeURIComponent(query)}&limit=180`);hits=await response.json();}catch{} }
+  if(currentSnapshot){try{const response=await fetch(apiUrl(`/api/snapshots/${currentSnapshot}/search?q=${encodeURIComponent(query)}&limit=180`));hits=await response.json();}catch{} }
   else{const q=query.toLowerCase();for(const file of files){if(hits.length>=180)break;if(file.path.toLowerCase().includes(q))hits.push({entityId:file.id,path:file.path,name:file.name,line:1,kind:'file'});for(const symbol of file.symbols){if(hits.length>=180)break;if(symbol.name.toLowerCase().includes(q))hits.push({entityId:file.id,path:file.path,name:symbol.name,line:symbol.line,kind:'definition'});}}}
   renderResults(hits);switchTab('results');
 }
@@ -627,20 +630,31 @@ async function collectHandles(directory,prefix,output){for await(const [name,han
 async function uploadLocal(name,chosen){
   if(!chosen.length)return;showProgress('Preparing local codebase',`Sending ${format(chosen.length)} files…`,0,chosen.length);
   try{
-    const response=await fetch('/api/jobs',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({kind:'local',name})});const {jobId,error}=await response.json();if(error)throw new Error(error);
-    let completed=0,cursor=0;const workers=Array.from({length:Math.min(4,chosen.length)},async()=>{while(cursor<chosen.length){const index=cursor++,entry=chosen[index];if(entry.file.size>8*1024*1024){completed++;continue;}const upload=await fetch(`/api/jobs/${jobId}/files?path=${encodeURIComponent(entry.path)}`,{method:'POST',body:entry.file});if(!upload.ok)throw new Error(`Could not read ${entry.path}`);completed++;showProgress('Preparing local codebase',entry.path,completed,chosen.length);}});await Promise.all(workers);await fetch(`/api/jobs/${jobId}/commit`,{method:'POST'});watchJob(jobId);
+    const response=await fetch(apiUrl('/api/jobs'),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({kind:'local',name})});const {jobId,error}=await response.json();if(error)throw new Error(error);
+    let completed=0,cursor=0;const workers=Array.from({length:Math.min(4,chosen.length)},async()=>{while(cursor<chosen.length){const index=cursor++,entry=chosen[index];if(entry.file.size>8*1024*1024){completed++;continue;}const upload=await fetch(apiUrl(`/api/jobs/${jobId}/files?path=${encodeURIComponent(entry.path)}`),{method:'POST',body:entry.file});if(!upload.ok)throw new Error(`Could not read ${entry.path}`);completed++;showProgress('Preparing local codebase',entry.path,completed,chosen.length);}});await Promise.all(workers);await fetch(apiUrl(`/api/jobs/${jobId}/commit`),{method:'POST'});watchJob(jobId);
   }catch(error){showError(error.message);}
 }
 
 $('#githubButton').addEventListener('click',startGithub);$('#githubInput').addEventListener('keydown',event=>{if(event.key==='Enter'){event.preventDefault();startGithub();}});
-async function startGithub(){const url=$('#githubInput').value.trim();$('#githubError').textContent='';if(!/^https:\/\/github\.com\/[\w.-]+\/[\w.-]+\/?(?:\.git)?$/.test(url)){ $('#githubError').textContent='Enter a public GitHub owner/repository URL.';return;}dialog.close();showProgress('Cloning repository','Connecting to GitHub…',0,0);try{const response=await fetch('/api/jobs',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({kind:'github',url,name:url.split('/').filter(Boolean).pop()?.replace(/\.git$/,'')})});const payload=await response.json();if(!response.ok)throw new Error(payload.error||'Could not start indexing');watchJob(payload.jobId);}catch(error){showError(error.message);}}
+async function startGithub(){const url=$('#githubInput').value.trim();$('#githubError').textContent='';if(!/^https:\/\/github\.com\/[\w.-]+\/[\w.-]+\/?(?:\.git)?$/.test(url)){ $('#githubError').textContent='Enter a public GitHub owner/repository URL.';return;}dialog.close();showProgress('Cloning repository','Connecting to GitHub…',0,0);try{const response=await fetch(apiUrl('/api/jobs'),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({kind:'github',url,name:url.split('/').filter(Boolean).pop()?.replace(/\.git$/,'')})});const payload=await response.json();if(!response.ok)throw new Error(payload.error||'Could not start indexing');watchJob(payload.jobId);}catch(error){showError(error.message);}}
 
 function watchJob(jobId){
-  const events=new EventSource(`/api/jobs/${jobId}/events`);
-  events.addEventListener('progress',async event=>{const job=JSON.parse(event.data);showProgress(job.phase==='ready'?'Landscape ready':'Indexing codebase',job.message,job.completed,job.total);if(job.error){events.close();showError(job.error);}if(job.snapshotId){events.close();try{const response=await fetch(`/api/snapshots/${job.snapshotId}/scene`);const snapshot=await response.json();applySnapshot(snapshot);buildLegend();setTimeout(()=>{$('#progressCard').hidden=true;},350);}catch(error){showError(error.message);}}});
+  const events=new EventSource(apiUrl(`/api/jobs/${jobId}/events`));
+  events.addEventListener('progress',async event=>{const job=JSON.parse(event.data);showProgress(job.phase==='ready'?'Landscape ready':'Indexing codebase',job.message,job.completed,job.total);if(job.error){events.close();showError(job.error);}if(job.snapshotId){events.close();try{const response=await fetch(apiUrl(`/api/snapshots/${job.snapshotId}/scene`));const snapshot=await response.json();applySnapshot(snapshot);buildLegend();setTimeout(()=>{$('#progressCard').hidden=true;},350);}catch(error){showError(error.message);}}});
   events.onerror=()=>{events.close();showError('The indexer connection closed before the landscape was ready.');};
 }
 function showProgress(title,message,completed,total){$('#progressCard').hidden=false;$('#progressTitle').textContent=title;$('#progressMessage').textContent=message||'';const percent=total?Math.max(3,Math.round(completed/total*100)):12;$('#progressFill').style.width=`${percent}%`;$('#progressFill').style.background='';$('#progressCount').textContent=total?`${format(completed)} / ${format(total)} · ${percent}%`:'Working…';}
 function showError(message){$('#progressCard').hidden=false;$('#progressTitle').textContent='Could not build landscape';$('#progressMessage').textContent=message;$('#progressFill').style.width='100%';$('#progressFill').style.background='var(--danger)';$('#progressCount').textContent='Check the repository or folder and try again.';}
 
-renderer.setData([]);fitScene();renderInspector();renderHistory();requestAnimationFrame(animate);
+async function checkBackend(){
+  const indicator=$('.live-dot');
+  try{
+    const response=await fetch(apiUrl('/api/health'));
+    if(!response.ok)throw new Error(`HTTP ${response.status}`);
+    indicator.classList.add('connected');indicator.title=`Backend connected${API_BASE?` · ${API_BASE}`:''}`;
+  }catch{
+    indicator.classList.remove('connected');indicator.title=`Backend unavailable${API_BASE?` · ${API_BASE}`:''}`;
+  }
+}
+
+renderer.setData([]);fitScene();renderInspector();renderHistory();requestAnimationFrame(animate);checkBackend();
