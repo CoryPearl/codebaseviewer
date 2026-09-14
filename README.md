@@ -2,7 +2,7 @@
 
 A framework-free browser codebase explorer inspired by Rik Arends' large-codebase landscape demo. The repository is split into a vanilla JavaScript/WebGL2 frontend and a standalone Rust API backend.
 
-![Codebase Viewer showing a source-code landscape with a file inspector](demo.png)
+![Codebase Viewer showing a source-code landscape with a file inspector](./demo.png?v=99b895c)
 
 [https://codebaseviewer.vercel.app](https://codebaseviewer.vercel.app)
 
