@@ -436,6 +436,7 @@ function drawOverlay(){
     if(renderer.camera.zoom<=2.75)drawCodeOverview(ctx);
     else for(const {item,rect} of visible)drawCodeTexture(ctx,item,rect);
   }
+  if(showCode&&renderer.mode==='3d')draw3dCode(ctx,visible);
   if(renderer.mode==='2d'){
     const labelDepth=renderer.camera.zoom<1.15?1:renderer.camera.zoom<1.8?2:renderer.camera.zoom<3?3:4;
     for(const dir of directoryRects){
@@ -549,6 +550,29 @@ function buildCodeTexture(item,rect){
   paintCodeSurface(texture.getContext('2d',{alpha:true}),item,width,height);
   rememberCodeTexture(item,texture);item._codeSource=sourceKey;item._codeResolution=target;return texture;
 }
+function draw3dCode(ctx,visible){
+  // Draw far faces first; opaque top faces occlude text on faces behind them.
+  const faces=visible.map(entry=>({...entry,depth:renderer.project([entry.item.x+entry.item.w/2,entry.item.y+entry.item.h/2,entry.item.height]).depth})).sort((a,b)=>b.depth-a.depth);
+  for(const {item,rect} of faces){
+    const corners=tileCorners(item);if(corners.some(p=>!Number.isFinite(p.x)||!Number.isFinite(p.y)))continue;
+    ctx.save();ctx.beginPath();corners.forEach((p,i)=>i?ctx.lineTo(p.x,p.y):ctx.moveTo(p.x,p.y));ctx.closePath();ctx.clip();
+    ctx.fillStyle='#1c1c1c';ctx.fillRect(rect.x-1,rect.y-1,rect.w+2,rect.h+2);
+    const texture=buildCodeTexture(item,rect);
+    if(texture){
+      // Match the two triangles used by the WebGL top face exactly.
+      const [a,b,c,d]=corners,w=texture.width,h=texture.height;
+      for(const second of [false,true]){
+        ctx.save();ctx.beginPath();const triangle=second?[a,c,d]:[a,b,c];triangle.forEach((p,i)=>i?ctx.lineTo(p.x,p.y):ctx.moveTo(p.x,p.y));ctx.closePath();ctx.clip();
+        const x=second?{x:c.x-d.x,y:c.y-d.y}:{x:b.x-a.x,y:b.y-a.y};
+        const y=second?{x:d.x-a.x,y:d.y-a.y}:{x:c.x-b.x,y:c.y-b.y};
+        ctx.transform(x.x/w,x.y/w,y.x/h,y.y/h,a.x,a.y);ctx.drawImage(texture,0,0);ctx.restore();
+      }
+    }
+    ctx.restore();
+    ctx.save();ctx.strokeStyle=palettes[paletteIndex][item.layer]||palettes[paletteIndex].unknown;ctx.lineWidth=1;ctx.beginPath();corners.forEach((p,i)=>i?ctx.lineTo(p.x,p.y):ctx.moveTo(p.x,p.y));ctx.closePath();ctx.stroke();ctx.restore();
+  }
+}
+
 function drawCodeTexture(ctx,item,rect){
   const texture=buildCodeTexture(item,rect);if(!texture)return;
   ctx.save();ctx.imageSmoothingEnabled=true;ctx.globalAlpha=.96;ctx.drawImage(texture,rect.x,rect.y,rect.w,rect.h);ctx.restore();
