@@ -35,6 +35,10 @@ const codeTextureLru=new Map(),codeTextureBudget=192*1024*1024,overviewScale=3;
 let selected=null;
 let history=[];
 let searchHits=[];
+let expandedCoverageLayer=null;
+let coverageActiveIndex=-1;
+let coveragePreviewId=null;
+let cameraAnimation=null;
 let currentSnapshot=null;
 let currentName='';
 let currentMetric='lines';
@@ -157,14 +161,15 @@ function visibleLayout(w,h){
 
 function applySnapshot(snapshot){
   sourceQueue.length=0;queuedSources.clear();
-  files=snapshot.files||[];for(const file of files)file.symbols||=[];edges=snapshot.edges||[];currentName=snapshot.name||'codebase';currentSnapshot=snapshot.id||null;selected=null;history=[];searchHits=[];
+  files=snapshot.files||[];for(const file of files)file.symbols||=[];edges=snapshot.edges||[];currentName=snapshot.name||'codebase';currentSnapshot=snapshot.id||null;selected=null;history=[];searchHits=[];expandedCoverageLayer=null;coverageActiveIndex=-1;coveragePreviewId=null;cameraAnimation=null;
   fileById=new Map(files.map(file=>[file.id,file]));referenceDegree=new Map();edgesByFile=new Map();let known=0,inferred=0;for(const edge of edges){referenceDegree.set(edge.from,(referenceDegree.get(edge.from)||0)+1);referenceDegree.set(edge.to,(referenceDegree.get(edge.to)||0)+1);for(const id of [edge.from,edge.to]){const list=edgesByFile.get(id);if(list)list.push(edge);else edgesByFile.set(id,[edge]);}if(edge.confidence==='known')known++;else inferred++;}
-  const layers=new Map();for(const file of files)layers.set(file.layer,(layers.get(file.layer)||0)+1);sceneStats={definitions:snapshot.definitions??files.reduce((n,file)=>n+(file.symbolCount||0),0),totalLines:snapshot.totalLines??files.reduce((n,file)=>n+file.lines,0),known,inferred,layers};
+  const layers=new Map();for(const file of files){const layer=file.layer in layerLabels?file.layer:'unknown';layers.set(layer,(layers.get(layer)||0)+1);}sceneStats={definitions:snapshot.definitions??files.reduce((n,file)=>n+(file.symbolCount||0),0),totalLines:snapshot.totalLines??files.reduce((n,file)=>n+file.lines,0),known,inferred,layers};
   computeLayout();fitScene();updateStats(snapshot);renderInspector();renderResults([]);renderHistory();
   $('#breadcrumbText').textContent=currentName;$('#emptyState').hidden=files.length>0;
 }
 
 function fitScene(){
+  cameraAnimation=null;
   renderer.camera.x=500;renderer.camera.y=340;
   renderer.camera.zoom=Math.min((viewport.clientWidth-24)/1000,(viewport.clientHeight-24)/680);
   renderer.camera.distance=3.5;renderer.camera.yaw=-.12;renderer.camera.pitch=.76;dirty=true;
@@ -299,6 +304,8 @@ function mountSourceViewer(file){
 
 function selectFile(file,addHistory=true){
   selected=file||null;
+  coveragePreviewId=null;
+  if(!file)coverageActiveIndex=-1;
   if(file&&addHistory){history=history.filter(item=>item.id!==file.id);history.unshift(file);history=history.slice(0,30);renderHistory();}
   $('#breadcrumbText').textContent=file?`${currentName}  ›  ${file.path}`:currentName;
   renderInspector();if(file)loadFileDetails(file);dirty=true;
@@ -307,13 +314,58 @@ function selectFile(file,addHistory=true){
 function renderInspector(){
   const hint=$('#inspectHint'),content=$('#inspectContent');
   if(!files.length){hint.hidden=false;hint.textContent='Open a local folder or public GitHub repository to begin.';content.innerHTML='';return;}
-  if(!selected){hint.hidden=false;hint.textContent='Select an entity on the map';content.innerHTML=`<div class="entity-title"><small>Coverage · ${escapeHtml(currentName)}</small><h2>${format(files.length)} indexed files</h2></div><div class="meta-grid"><span>known links</span><b>${format(sceneStats.known)}</b><span>inferred links</span><b>${format(sceneStats.inferred)}</b><span>definitions</span><b>${format(sceneStats.definitions)}</b><span>source lines</span><b>${format(sceneStats.totalLines)}</b></div><div class="section-title">Semantic coverage</div>${Object.entries(layerLabels).map(([key,label])=>`<div class="relation"><i style="background:${palettes[paletteIndex][key]}"></i><span>${label}</span><small>${sceneStats.layers.get(key)||0}</small></div>`).join('')}`;return;}
+  if(!selected){
+    hint.hidden=false;hint.textContent=expandedCoverageLayer?'Choose a file or use ↑ and ↓ to explore':'Select an entity on the map';
+    const coverageRows=Object.entries(layerLabels).map(([key,label])=>`<button class="coverage-row${expandedCoverageLayer===key?' active':''}" type="button" data-coverage-layer="${key}" aria-expanded="${expandedCoverageLayer===key}"><i style="background:${palettes[paletteIndex][key]}"></i><span>${label}</span><small>${format(sceneStats.layers.get(key)||0)}</small><b aria-hidden="true">${expandedCoverageLayer===key?'−':'+'}</b></button>`).join('');
+    const expandedLabel=layerLabels[expandedCoverageLayer];
+    content.innerHTML=`<div class="entity-title"><small>Coverage · ${escapeHtml(currentName)}</small><h2>${format(files.length)} indexed files</h2></div><div class="meta-grid"><span>known links</span><b>${format(sceneStats.known)}</b><span>inferred links</span><b>${format(sceneStats.inferred)}</b><span>definitions</span><b>${format(sceneStats.definitions)}</b><span>source lines</span><b>${format(sceneStats.totalLines)}</b></div><div class="section-title coverage-title"><span>Semantic coverage</span><small>Click a section</small></div><div class="coverage-menu">${coverageRows}</div>${expandedCoverageLayer?`<div class="coverage-list-head"><span>${escapeHtml(expandedLabel)}</span><small>↑ ↓ preview · Enter open</small></div><div class="coverage-file-list" id="coverageFileList" tabindex="0" role="listbox" aria-label="${escapeHtml(expandedLabel)} files"><div class="coverage-list-spacer" id="coverageListSpacer"></div><div class="coverage-list-window" id="coverageListWindow"></div></div>`:''}`;
+    content.querySelectorAll('[data-coverage-layer]').forEach(row=>row.addEventListener('click',()=>toggleCoverageLayer(row.dataset.coverageLayer)));
+    if(expandedCoverageLayer)mountCoverageList(expandedCoverageLayer);
+    return;
+  }
   hint.hidden=true;
   const related=(edgesByFile.get(selected.id)||[]).slice(0,30).map(edge=>({edge,file:fileById.get(edge.from===selected.id?edge.to:edge.from)})).filter(item=>item.file);
   const sourceStatus=selected.sourceLoading?'Loading complete file…':selected.sourceError?'Preview only':`${format(selected.lines)} lines`;
   content.innerHTML=`<div class="entity-title"><small>${escapeHtml(selected.path)}</small><h2>${escapeHtml(selected.name)}</h2></div><div class="meta-grid"><span>language</span><b>${escapeHtml(selected.language)}</b><span>semantic layer</span><b>${escapeHtml(layerLabels[selected.layer]||'Other')}</b><span>source lines</span><b>${format(selected.lines)}</b><span>definitions</span><b>${format(selected.symbols.length)}</b><span>complexity</span><b>${format(selected.complexity)}</b><span>connections</span><b>${format(related.length)}</b></div>${selected.symbols.length?`<div class="section-title">Definitions · ${selected.symbols.length}</div>${selected.symbols.slice(0,18).map(symbol=>`<div class="relation"><i style="background:var(--yellow)"></i><span>${escapeHtml(symbol.name)}</span><small>${symbol.line}</small></div>`).join('')}`:''}${related.length?`<div class="section-title">Relationships · ${related.length}</div>${related.map(({edge,file})=>`<div class="relation" data-id="${file.id}"><i></i><span>${escapeHtml(file.path)}</span><small>${edge.confidence}</small></div>`).join('')}`:''}<div class="section-title source-title"><span>Source</span><small>${sourceStatus}</small></div><div class="code-preview" id="sourceViewer" tabindex="0" aria-label="Scrollable source for ${escapeHtml(selected.name)}"><div class="source-spacer" id="sourceSpacer"></div><pre class="source-window" id="sourceWindow"></pre></div>`;
   content.querySelectorAll('.relation[data-id]').forEach(row=>row.addEventListener('click',()=>selectFile(fileById.get(Number(row.dataset.id)))));
   mountSourceViewer(selected);
+}
+
+function normalizedLayer(file){return file.layer in layerLabels?file.layer:'unknown';}
+
+function toggleCoverageLayer(layer){
+  cancelCameraAnimation();expandedCoverageLayer=expandedCoverageLayer===layer?null:layer;coverageActiveIndex=-1;coveragePreviewId=null;renderInspector();dirty=true;
+  if(expandedCoverageLayer)requestAnimationFrame(()=>$('#coverageFileList')?.focus({preventScroll:true}));
+}
+
+function mountCoverageList(layer){
+  const list=$('#coverageFileList'),spacer=$('#coverageListSpacer'),windowElement=$('#coverageListWindow');if(!list||!spacer||!windowElement)return;
+  const layerFiles=files.filter(file=>normalizedLayer(file)===layer).sort((a,b)=>a.path.localeCompare(b.path,undefined,{numeric:true,sensitivity:'base'}));
+  const rowHeight=43;spacer.style.height=`${layerFiles.length*rowHeight}px`;
+  let frame=0;
+  const renderWindow=()=>{
+    frame=0;const start=Math.max(0,Math.floor(list.scrollTop/rowHeight)-4),count=Math.ceil(list.clientHeight/rowHeight)+8,end=Math.min(layerFiles.length,start+count);
+    windowElement.style.transform=`translateY(${start*rowHeight}px)`;
+    windowElement.innerHTML=layerFiles.slice(start,end).map((file,offset)=>{const index=start+offset;return`<button type="button" class="coverage-file${coverageActiveIndex===index?' active':''}" id="coverage-file-${file.id}" data-coverage-index="${index}" role="option" aria-selected="${coverageActiveIndex===index}"><i style="background:${palettes[paletteIndex][normalizedLayer(file)]}"></i><span><strong>${escapeHtml(file.name)}</strong><small>${escapeHtml(file.path)}</small></span><em>${format(file.lines)}</em></button>`;}).join('')||'<div class="coverage-empty">No files in this section.</div>';
+  };
+  const preview=index=>{
+    if(!layerFiles.length)return;coverageActiveIndex=Math.max(0,Math.min(layerFiles.length-1,index));const file=layerFiles[coverageActiveIndex];coveragePreviewId=file.id;list.setAttribute('aria-activedescendant',`coverage-file-${file.id}`);
+    const top=coverageActiveIndex*rowHeight,bottom=top+rowHeight;if(top<list.scrollTop)list.scrollTop=top;else if(bottom>list.scrollTop+list.clientHeight)list.scrollTop=bottom-list.clientHeight;
+    focusFile(file);renderWindow();dirty=true;
+  };
+  list.addEventListener('scroll',()=>{if(!frame)frame=requestAnimationFrame(renderWindow);},{passive:true});
+  list.addEventListener('click',event=>{const row=event.target.closest('[data-coverage-index]');if(!row)return;const index=Number(row.dataset.coverageIndex),file=layerFiles[index];if(file){coverageActiveIndex=index;focusFile(file);selectFile(file);}});
+  list.addEventListener('keydown',event=>{
+    let next=coverageActiveIndex;
+    if(event.key==='ArrowDown')next=next<0?0:next+1;
+    else if(event.key==='ArrowUp')next=next<0?layerFiles.length-1:next-1;
+    else if(event.key==='Home')next=0;
+    else if(event.key==='End')next=layerFiles.length-1;
+    else if(event.key==='Enter'&&next>=0){const file=layerFiles[next];if(file){focusFile(file);selectFile(file);}event.preventDefault();return;}
+    else return;
+    event.preventDefault();preview(next);
+  });
+  renderWindow();
 }
 
 function renderResults(hits){
@@ -329,10 +381,19 @@ function renderHistory(){
 
 function focusFile(file){
   const item=layoutById.get(file.id);if(!item)return;
-  if(renderer.mode==='2d'){renderer.camera.x=item.x+item.w/2;renderer.camera.y=item.y+item.h/2;const fit=Math.min(viewport.clientWidth/Math.max(.2,item.w*1.35),viewport.clientHeight/Math.max(.2,item.h*1.35),MAX_2D_ZOOM);renderer.camera.zoom=Math.min(MAX_2D_ZOOM,Math.max(fit,9/codeWorldFont(item)));}
-  else{renderer.camera.x=item.x+item.w/2;renderer.camera.y=item.y+item.h/2;renderer.camera.distance=2.25;}
-  dirty=true;
+  const target={x:item.x+item.w/2,y:item.y+item.h/2};
+  if(renderer.mode==='2d'){const fit=Math.min(viewport.clientWidth/Math.max(.2,item.w*1.35),viewport.clientHeight/Math.max(.2,item.h*1.35),MAX_2D_ZOOM);target.zoom=Math.min(MAX_2D_ZOOM,Math.max(fit,9/codeWorldFont(item)));}
+  else target.distance=2.25;
+  animateCameraTo(target);
 }
+
+function animateCameraTo(target){
+  const from={},to={};for(const [key,value] of Object.entries(target)){from[key]=renderer.camera[key];to[key]=value;}
+  if(matchMedia('(prefers-reduced-motion: reduce)').matches){Object.assign(renderer.camera,to);cameraAnimation=null;dirty=true;return;}
+  cameraAnimation={from,to,start:performance.now(),duration:620};dirty=true;
+}
+
+function cancelCameraAnimation(){cameraAnimation=null;}
 
 function switchTab(name){$$('.tab').forEach(tab=>tab.classList.toggle('active',tab.dataset.tab===name));$$('.panel').forEach(panel=>panel.classList.toggle('active',panel.id===`panel-${name}`));}
 $$('.tab').forEach(tab=>tab.addEventListener('click',()=>switchTab(tab.dataset.tab)));
@@ -392,7 +453,8 @@ function drawOverlay(){
     ctx.fillStyle='rgba(11,13,12,.48)';ctx.fillRect(0,0,w,h);
     for(const {item,rect} of visible){if(!hitIds.has(item.id))continue;ctx.strokeStyle='#e8c74b';ctx.lineWidth=2;ctx.strokeRect(rect.x-.5,rect.y-.5,rect.w+1,rect.h+1);drawFileChip(ctx,item,rect,'#e8c74b',null,true);}
   }
-  if(selected){const item=layoutById.get(selected.id);if(item){const rect=renderer.screenRect(item);ctx.strokeStyle='#fff08a';ctx.lineWidth=2.5;ctx.strokeRect(rect.x-1,rect.y-1,rect.w+2,rect.h+2);drawFileChip(ctx,item,rect,'#fff08a',null,true);}}
+  const focusedFile=selected||fileById.get(coveragePreviewId);
+  if(focusedFile){const item=layoutById.get(focusedFile.id);if(item){const rect=renderer.screenRect(item),accent=selected?'#fff08a':'#8ac9ff';ctx.strokeStyle=accent;ctx.lineWidth=2.5;ctx.strokeRect(rect.x-1,rect.y-1,rect.w+2,rect.h+2);drawFileChip(ctx,item,rect,accent,null,true);}}
   ctx.restore();
 }
 
@@ -459,6 +521,11 @@ function drawCodeTexture(ctx,item,rect){
 }
 
 function animate(now){
+  if(cameraAnimation){
+    const progress=Math.min(1,(now-cameraAnimation.start)/cameraAnimation.duration),eased=1-(1-progress)**4;
+    for(const key of Object.keys(cameraAnimation.to))renderer.camera[key]=cameraAnimation.from[key]+(cameraAnimation.to[key]-cameraAnimation.from[key])*eased;
+    if(progress>=1)cameraAnimation=null;dirty=true;
+  }
   if(dirty){renderer.render();drawOverlay();dirty=codeTexturesPending;}
   const delta=now-lastFrame;lastFrame=now;if(delta<100){frameSamples.push(delta);if(frameSamples.length>45)frameSamples.shift();if(frameSamples.length&&Math.floor(now/500)!==Math.floor((now-delta)/500)){const average=frameSamples.reduce((a,b)=>a+b,0)/frameSamples.length;$('#fps').textContent=`${Math.round(1000/average)} fps · ${(average).toFixed(1)} ms`;}}
   requestAnimationFrame(animate);
@@ -474,6 +541,7 @@ viewport.addEventListener('pointerdown',event=>{
   const pan=renderer.mode==='3d'&&(event.button===1||event.button===2||event.shiftKey||event.altKey||event.metaKey||event.ctrlKey);
   if(renderer.mode==='2d'&&event.button!==0)return;
   event.preventDefault();
+  cancelCameraAnimation();
   pointer={down:true,x:event.clientX,y:event.clientY,startX:event.clientX,startY:event.clientY,action:pan?'pan':'orbit',id:event.pointerId};
   viewport.setPointerCapture(event.pointerId);viewport.classList.add('dragging',pan?'panning':'orbiting');
 });
@@ -498,10 +566,10 @@ viewport.addEventListener('pointerup',finishPointer);
 viewport.addEventListener('pointercancel',finishPointer);
 viewport.addEventListener('pointerleave',()=>{$('#tooltip').hidden=true;});
 viewport.addEventListener('contextmenu',event=>{if(renderer.mode==='3d')event.preventDefault();});
-viewport.addEventListener('wheel',event=>{event.preventDefault();if(renderer.mode==='3d'){dolly3d(event.deltaY*.00115);dirty=true;return;}const rect=viewport.getBoundingClientRect(),x=event.clientX-rect.left,y=event.clientY-rect.top,before=renderer.worldAt(x,y),factor=Math.exp(-event.deltaY*.0012);renderer.camera.zoom=Math.max(.25,Math.min(MAX_2D_ZOOM,renderer.camera.zoom*factor));const after=renderer.worldAt(x,y);renderer.camera.x+=before.x-after.x;renderer.camera.y+=before.y-after.y;dirty=true;},{passive:false});
+viewport.addEventListener('wheel',event=>{event.preventDefault();cancelCameraAnimation();if(renderer.mode==='3d'){dolly3d(event.deltaY*.00115);dirty=true;return;}const rect=viewport.getBoundingClientRect(),x=event.clientX-rect.left,y=event.clientY-rect.top,before=renderer.worldAt(x,y),factor=Math.exp(-event.deltaY*.0012);renderer.camera.zoom=Math.max(.25,Math.min(MAX_2D_ZOOM,renderer.camera.zoom*factor));const after=renderer.worldAt(x,y);renderer.camera.x+=before.x-after.x;renderer.camera.y+=before.y-after.y;dirty=true;},{passive:false});
 viewport.addEventListener('dblclick',event=>{const rect=viewport.getBoundingClientRect(),file=pickAt(event.clientX-rect.left,event.clientY-rect.top);if(file){selectFile(file);focusFile(file);}});
 
-$$('[data-view]').forEach(button=>button.addEventListener('click',()=>{$$('[data-view]').forEach(v=>v.classList.toggle('active',v===button));renderer.mode=button.dataset.view;if(renderer.mode==='3d')renderer.camera.zoom=1;$('#cameraHelp').hidden=renderer.mode!=='3d';dirty=true;}));
+$$('[data-view]').forEach(button=>button.addEventListener('click',()=>{cancelCameraAnimation();$$('[data-view]').forEach(v=>v.classList.toggle('active',v===button));renderer.mode=button.dataset.view;if(renderer.mode==='3d')renderer.camera.zoom=1;$('#cameraHelp').hidden=renderer.mode!=='3d';dirty=true;}));
 $$('[data-metric]').forEach(button=>button.addEventListener('click',()=>{$$('[data-metric]').forEach(v=>v.classList.toggle('active',v===button));currentMetric=button.dataset.metric;computeLayout();}));
 $('#codeButton').classList.toggle('active',showCode);$('#codeButton').addEventListener('click',event=>{showCode=!showCode;event.currentTarget.classList.toggle('active',showCode);dirty=true;});
 $('#homeButton').addEventListener('click',()=>{selectFile(null);fitScene();});
@@ -510,7 +578,7 @@ $('#layersButton').addEventListener('click',()=>{showLegend=!showLegend;$('#lege
 $('#paletteButton').addEventListener('click',()=>{paletteIndex=(paletteIndex+1)%palettes.length;computeLayout();buildLegend();renderInspector();renderHistory();});
 $('#settingsButton').addEventListener('click',()=>{selectFile(null);switchTab('inspector');$('#inspectHint').hidden=true;$('#inspectContent').innerHTML=`<div class="entity-title"><small>Renderer</small><h2>WebGL2 performance</h2></div><div class="meta-grid"><span>display refresh</span><b>${$('#fps').textContent.split('·')[0]}</b><span>render instances</span><b>${format(layoutItems.length)}</b><span>pixel ratio</span><b>${renderer.dpr.toFixed(2)}×</b><span>geometry uploads</span><b>static</b><span>camera updates</span><b>GPU uniforms</b></div><p class="panel-hint" style="margin-top:12px">The map uses one instanced draw call. Labels and source details appear progressively as you zoom.</p>`;});
 
-function buildLegend(){$('#legend').innerHTML=Object.entries(layerLabels).map(([key,label])=>`<span><i style="background:${palettes[paletteIndex][key]}"></i>${label}</span><b>${sceneStats.layers.get(key)||0}</b>`).join('');}
+function buildLegend(){const legend=$('#legend');legend.innerHTML=Object.entries(layerLabels).map(([key,label])=>`<button type="button" data-legend-layer="${key}"><span><i style="background:${palettes[paletteIndex][key]}"></i>${label}</span><b>${format(sceneStats.layers.get(key)||0)}</b></button>`).join('');legend.querySelectorAll('[data-legend-layer]').forEach(row=>row.addEventListener('click',()=>{selectFile(null);expandedCoverageLayer=row.dataset.legendLayer;coverageActiveIndex=-1;showLegend=false;legend.classList.remove('open');$('#layersButton').classList.remove('active');switchTab('inspector');renderInspector();requestAnimationFrame(()=>$('#coverageFileList')?.focus({preventScroll:true}));}));}
 
 let searchTimer;
 $('#searchInput').addEventListener('input',()=>{clearTimeout(searchTimer);searchTimer=setTimeout(runSearch,140);});
@@ -522,10 +590,12 @@ async function runSearch(){
   renderResults(hits);switchTab('results');
 }
 document.addEventListener('keydown',event=>{
+  if(event.defaultPrevented)return;
   if(event.key==='/'&&document.activeElement!==$('#searchInput')){event.preventDefault();$('#searchInput').focus();}
   if(event.key==='Escape'){$('#searchInput').blur();$('#tooltip').hidden=true;}
   if((event.metaKey||event.ctrlKey)&&event.key==='o'){event.preventDefault();$('#loadDialog').showModal();}
   if(renderer.mode!=='3d'||/INPUT|TEXTAREA|SELECT/.test(document.activeElement?.tagName))return;
+  cancelCameraAnimation();
   const key=event.key.toLowerCase(),orbitStep=.065,panStep=22/Math.max(.8,renderer.camera.distance);
   if(key==='arrowleft')renderer.camera.yaw+=orbitStep;
   else if(key==='arrowright')renderer.camera.yaw-=orbitStep;
