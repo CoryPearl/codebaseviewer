@@ -4,6 +4,8 @@ A framework-free browser codebase explorer inspired by Rik Arends' large-codebas
 
 ![Codebase Viewer showing a source-code landscape with a file inspector](demo.png)
 
+[https://codebaseviewer.vercel.app](https://codebaseviewer.vercel.app)
+
 ## Repository layout
 
 - `frontend/`: static HTML, CSS, JavaScript, WebGL renderer, favicon, and Vercel build script
