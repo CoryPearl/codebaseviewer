@@ -111,8 +111,7 @@ fn main() -> io::Result<()> {
 
     let listener = TcpListener::bind(("0.0.0.0", port))?;
     let state = Arc::new(State::default());
-    println!("Codebase Viewer API is listening on http://0.0.0.0:{port}");
-    println!("Health check: http://127.0.0.1:{port}/api/health");
+    println!("Codebase Viewer API started");
     if open {
         let _ = Command::new("open")
             .arg(format!("http://127.0.0.1:{port}"))

@@ -30,4 +30,4 @@ await writeFile(
   'utf8',
 );
 
-console.log(`Built frontend for ${backendUrl}`);
+console.log('Built frontend');

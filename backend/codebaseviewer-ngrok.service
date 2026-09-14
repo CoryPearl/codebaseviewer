@@ -1,0 +1,29 @@
+[Unit]
+Description=Codebase Viewer ngrok tunnel
+Documentation=https://github.com/CoryPearl/codebaseviewer
+Wants=network-online.target
+Requires=codebaseviewer.service
+After=network-online.target codebaseviewer.service
+
+[Service]
+Type=simple
+User=codebaseviewer
+Group=codebaseviewer
+ExecStart=/usr/bin/ngrok start codebaseviewer --config /etc/codebaseviewer-ngrok.yml
+Restart=always
+RestartSec=5s
+TimeoutStopSec=15s
+
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+LockPersonality=true
+RestrictSUIDSGID=true
+
+[Install]
+WantedBy=multi-user.target

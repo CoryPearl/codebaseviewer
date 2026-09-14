@@ -1,0 +1,9 @@
+version: 3
+agent:
+  authtoken: REPLACE_WITH_YOUR_NGROK_AUTHTOKEN
+  log_level: error
+endpoints:
+  - name: codebaseviewer
+    url: https://your-assigned-domain.ngrok-free.dev
+    upstream:
+      url: http://127.0.0.1:3001

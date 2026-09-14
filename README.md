@@ -109,6 +109,56 @@ curl http://127.0.0.1:3001/api/health
 sudo journalctl -u codebaseviewer -f
 ```
 
+### Run ngrok with systemd
+
+Install ngrok on the Ubuntu backend machine using the official package, then confirm where it was installed:
+
+```bash
+curl -sSL https://ngrok-agent.s3.amazonaws.com/ngrok.asc \
+  | sudo tee /etc/apt/trusted.gpg.d/ngrok.asc >/dev/null
+echo "deb https://ngrok-agent.s3.amazonaws.com bookworm main" \
+  | sudo tee /etc/apt/sources.list.d/ngrok.list
+sudo apt update
+sudo apt install ngrok
+command -v ngrok
+```
+
+The included unit expects `/usr/bin/ngrok`. If `command -v ngrok` prints another path, edit `ExecStart` in `backend/codebaseviewer-ngrok.service` before installing it.
+
+Copy the ngrok configuration and service unit:
+
+```bash
+sudo install -o root -g codebaseviewer -m 640 /opt/codebaseviewer/backend/ngrok.yml.example /etc/codebaseviewer-ngrok.yml
+sudo install -m 644 /opt/codebaseviewer/backend/codebaseviewer-ngrok.service /etc/systemd/system/codebaseviewer-ngrok.service
+sudoedit /etc/codebaseviewer-ngrok.yml
+```
+
+Replace the example authtoken and URL in `/etc/codebaseviewer-ngrok.yml`. Keep the upstream set to `http://127.0.0.1:3001`; TLS is provided by ngrok. The root-owned configuration keeps the token and public endpoint out of the repository and normal process command lines.
+
+Stop any interactive ngrok process using the same endpoint before starting the service, then enable both services:
+
+```bash
+pkill -u "$USER" -x ngrok || true
+sudo systemctl daemon-reload
+sudo systemctl enable --now codebaseviewer
+sudo systemctl enable --now codebaseviewer-ngrok
+sudo systemctl status codebaseviewer codebaseviewer-ngrok --no-pager
+```
+
+Verify both the private backend and the public tunnel:
+
+```bash
+curl http://127.0.0.1:3001/api/health
+curl https://your-assigned-domain.ngrok-free.dev/api/health
+```
+
+The ngrok service requires and starts after the backend service. Both restart automatically and start again after reboot. To inspect errors without continuously exposing routine endpoint details, the example ngrok configuration logs only errors:
+
+```bash
+sudo journalctl -u codebaseviewer -n 50 --no-pager
+sudo journalctl -u codebaseviewer-ngrok -n 50 --no-pager
+```
+
 After pulling and rebuilding an update, restart the service:
 
 ```bash
@@ -125,6 +175,8 @@ Useful management commands:
 sudo systemctl stop codebaseviewer
 sudo systemctl start codebaseviewer
 sudo systemctl disable --now codebaseviewer
+sudo systemctl restart codebaseviewer-ngrok
+sudo systemctl disable --now codebaseviewer-ngrok
 ```
 
 The backend stores uploaded folders, cloned repositories, indexes, and snapshots in temporary memory and disk. They disappear when the process restarts. Do not expose it publicly without considering who may upload code and consume machine resources.
