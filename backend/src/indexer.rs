@@ -56,6 +56,10 @@ pub struct Snapshot {
     pub warnings: Vec<String>,
     #[serde(skip)]
     pub root: PathBuf,
+    #[serde(skip)]
+    pub delivered_source: HashMap<u32, Vec<(usize, usize)>>,
+    #[serde(skip)]
+    pub released_sources: HashSet<u32>,
 }
 
 pub fn index_directory<F>(root: &Path, mut progress: F) -> Result<Snapshot, String>
@@ -234,6 +238,12 @@ where
         }
     }
     let edges = link_files(&files);
+    // Imports are only an indexing intermediate. Edges contain everything the
+    // frontend needs once linking is complete.
+    for file in &mut files {
+        file.imports.clear();
+        file.imports.shrink_to_fit();
+    }
     let total_lines = files.iter().map(|f| f.lines).sum();
     let definition_count = files.iter().map(|f| f.symbols.len()).sum();
     let references = edges.len();
@@ -249,6 +259,8 @@ where
         references,
         warnings,
         root: root.to_path_buf(),
+        delivered_source: HashMap::new(),
+        released_sources: HashSet::new(),
     })
 }
 

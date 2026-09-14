@@ -336,8 +336,8 @@ fn handle_snapshot_route(
     let action = parts.next().unwrap_or("");
     let entity = parts.next().unwrap_or("");
     let entity_action = parts.next().unwrap_or("");
-    let snapshots = state.snapshots.lock().unwrap();
-    let Some(snapshot) = snapshots.get(id) else {
+    let mut snapshots = state.snapshots.lock().unwrap();
+    let Some(snapshot) = snapshots.get_mut(id) else {
         return json_response(stream, 404, &json!({"error": "Unknown snapshot"}));
     };
     match action {
@@ -357,28 +357,28 @@ fn handle_snapshot_route(
             }),
         ),
         "scene" => {
-            let files = snapshot
-                .files
-                .iter()
-                .map(|file| SceneFile {
-                    id: file.id,
-                    path: &file.path,
-                    name: &file.name,
-                    directory: &file.directory,
-                    extension: &file.extension,
-                    language: &file.language,
-                    layer: &file.layer,
-                    lines: file.lines,
-                    bytes: file.bytes,
-                    complexity: file.complexity,
-                    preview: &file.preview,
-                    symbol_count: file.symbols.len(),
-                })
-                .collect();
-            json_response(
-                stream,
-                200,
-                &SceneResponse {
+            // Serialize before clearing previews: the response owns the bytes
+            // that are being sent, so the backend can release its duplicate.
+            let body = {
+                let files = snapshot
+                    .files
+                    .iter()
+                    .map(|file| SceneFile {
+                        id: file.id,
+                        path: &file.path,
+                        name: &file.name,
+                        directory: &file.directory,
+                        extension: &file.extension,
+                        language: &file.language,
+                        layer: &file.layer,
+                        lines: file.lines,
+                        bytes: file.bytes,
+                        complexity: file.complexity,
+                        preview: &file.preview,
+                        symbol_count: file.symbols.len(),
+                    })
+                    .collect();
+                serde_json::to_vec(&SceneResponse {
                     id: &snapshot.id,
                     name: &snapshot.name,
                     source: &snapshot.source,
@@ -387,8 +387,17 @@ fn handle_snapshot_route(
                     total_lines: snapshot.total_lines,
                     definitions: snapshot.definitions,
                     references: snapshot.references,
-                },
-            )
+                })
+                .unwrap_or_else(|_| b"{\"error\":\"serialization failed\"}".to_vec())
+            };
+            let result = respond(stream, 200, "application/json; charset=utf-8", &body);
+            if result.is_ok() {
+                for file in &mut snapshot.files {
+                    file.preview.clear();
+                    file.preview.shrink_to_fit();
+                }
+            }
+            result
         }
         "search" => {
             let needle = query_param(query, "q")
@@ -435,18 +444,21 @@ fn handle_snapshot_route(
             .and_then(|entity_id| snapshot.files.iter().find(|file| file.id == entity_id))
         {
             Some(file) if entity_action == "source" => {
+                let file_id = file.id;
+                let total_lines = file.lines;
+                let file_path = file.path.clone();
                 let start = query_param(query, "start")
                     .and_then(|value| value.parse::<usize>().ok())
                     .unwrap_or(0)
-                    .min(file.lines);
+                    .min(total_lines);
                 let limit = query_param(query, "limit")
                     .and_then(|value| value.parse::<usize>().ok())
                     .unwrap_or(600)
                     .clamp(1, 4096);
-                let Some(relative) = safe_relative_path(&file.path) else {
+                let Some(relative) = safe_relative_path(&file_path) else {
                     return json_response(stream, 400, &json!({"error": "Unsafe file path"}));
                 };
-                let source = match fs::File::open(snapshot.root.join(relative)) {
+                let source = match fs::File::open(snapshot.root.join(&relative)) {
                     Ok(source) => source,
                     Err(_) => {
                         return json_response(stream, 404, &json!({"error": "Source unavailable"}));
@@ -458,11 +470,24 @@ fn handle_snapshot_route(
                     .take(limit)
                     .map_while(Result::ok)
                     .collect();
-                json_response(
-                    stream,
-                    200,
-                    &json!({"start": start, "lines": lines, "totalLines": file.lines}),
+                let delivered_end = start + lines.len();
+                let body = serde_json::to_vec(
+                    &json!({"start": start, "lines": lines, "totalLines": total_lines}),
                 )
+                .unwrap_or_else(|_| b"{\"error\":\"serialization failed\"}".to_vec());
+                let result = respond(stream, 200, "application/json; charset=utf-8", &body);
+                if result.is_ok() {
+                    let ranges = snapshot.delivered_source.entry(file_id).or_default();
+                    if record_delivery(ranges, start, delivered_end, total_lines)
+                        && snapshot.released_sources.insert(file_id)
+                    {
+                        let _ = fs::remove_file(snapshot.root.join(relative));
+                        if snapshot.released_sources.len() == snapshot.files.len() {
+                            remove_workspace(&snapshot.root);
+                        }
+                    }
+                }
+                result
             }
             Some(file) if entity_action.is_empty() => json_response(stream, 200, file),
             Some(_) => json_response(stream, 404, &json!({"error": "Unknown entity route"})),
@@ -524,11 +549,21 @@ fn index_job(state: Arc<State>, id: String, root: PathBuf) {
             snapshot.name = name;
             snapshot.source = source;
             let snapshot_id = snapshot.id.clone();
-            state
-                .snapshots
-                .lock()
-                .unwrap()
-                .insert(snapshot_id.clone(), snapshot);
+            let old_roots = {
+                let mut snapshots = state.snapshots.lock().unwrap();
+                let roots = snapshots
+                    .values()
+                    .map(|old| old.root.clone())
+                    .collect::<Vec<_>>();
+                snapshots.clear();
+                snapshots.insert(snapshot_id.clone(), snapshot);
+                roots
+            };
+            for old_root in old_roots {
+                if old_root != root {
+                    remove_workspace(&old_root);
+                }
+            }
             let mut jobs = state.jobs.lock().unwrap();
             if let Some(job) = jobs.get_mut(&id) {
                 job.phase = "ready".into();
@@ -537,7 +572,51 @@ fn index_job(state: Arc<State>, id: String, root: PathBuf) {
                 job.completed = job.total.max(job.completed);
             }
         }
-        Err(error) => fail_job(&state, &id, error),
+        Err(error) => {
+            remove_workspace(&root);
+            fail_job(&state, &id, error);
+        }
+    }
+}
+
+fn record_delivery(
+    ranges: &mut Vec<(usize, usize)>,
+    start: usize,
+    end: usize,
+    total: usize,
+) -> bool {
+    if end > start {
+        ranges.push((start, end.min(total)));
+        ranges.sort_unstable_by_key(|range| range.0);
+        let mut merged: Vec<(usize, usize)> = Vec::with_capacity(ranges.len());
+        for range in ranges.drain(..) {
+            if let Some(last) = merged.last_mut()
+                && range.0 <= last.1
+            {
+                last.1 = last.1.max(range.1);
+                continue;
+            }
+            merged.push(range);
+        }
+        *ranges = merged;
+    }
+    total == 0
+        || ranges
+            .first()
+            .is_some_and(|range| range.0 == 0 && range.1 >= total)
+}
+
+fn remove_workspace(root: &Path) {
+    let base = std::env::temp_dir().join("codebaseviewer");
+    if !root.starts_with(&base) || root == base {
+        return;
+    }
+    let _ = fs::remove_dir_all(root);
+    if let Some(parent) = root.parent()
+        && parent != base
+        && parent.starts_with(&base)
+    {
+        let _ = fs::remove_dir(parent);
     }
 }
 
@@ -649,6 +728,25 @@ fn json_response<T: Serialize>(stream: &mut TcpStream, status: u16, value: &T) -
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn delivery_ranges_merge_before_source_is_released() {
+        let mut ranges = Vec::new();
+        assert!(!record_delivery(&mut ranges, 600, 1_000, 1_000));
+        assert!(!record_delivery(&mut ranges, 0, 400, 1_000));
+        assert!(!record_delivery(&mut ranges, 350, 550, 1_000));
+        assert!(record_delivery(&mut ranges, 500, 700, 1_000));
+        assert_eq!(ranges, vec![(0, 1_000)]);
+    }
+
+    #[test]
+    fn empty_or_duplicate_delivery_does_not_fake_coverage() {
+        let mut ranges = Vec::new();
+        assert!(!record_delivery(&mut ranges, 0, 0, 10));
+        assert!(!record_delivery(&mut ranges, 0, 5, 10));
+        assert!(!record_delivery(&mut ranges, 0, 5, 10));
+        assert_eq!(ranges, vec![(0, 5)]);
+    }
 
     #[test]
     fn github_url_validation() {
