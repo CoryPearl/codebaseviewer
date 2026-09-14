@@ -38,7 +38,7 @@
         <input id="searchInput" type="search" placeholder="Filter" autocomplete="off" spellcheck="false">
         <kbd>/</kbd>
       </label>
-      <button class="tool" id="settingsButton" title="Performance details" aria-label="Performance details"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19 13.5v-3l-2-.7-.7-1.7.9-1.9-2.1-2.1-1.9.9-1.7-.7-.7-2h-3l-.7 2-1.7.7-1.9-.9-2.1 2.1.9 1.9-.7 1.7-2 .7v3l2 .7.7 1.7-.9 1.9 2.1 2.1 1.9-.9 1.7.7.7 2h3l.7-2 1.7-.7 1.9.9 2.1-2.1-.9-1.9.7-1.7z"/></svg></button>
+      <button class="tool" id="settingsButton" title="Performance details" aria-label="Performance details" aria-haspopup="dialog" aria-controls="settingsDialog"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19 13.5v-3l-2-.7-.7-1.7.9-1.9-2.1-2.1-1.9.9-1.7-.7-.7-2h-3l-.7 2-1.7.7-1.9-.9-2.1 2.1.9 1.9-.7 1.7-2 .7v3l2 .7.7 1.7-.9 1.9 2.1 2.1 1.9-.9 1.7.7.7 2h3l.7-2 1.7-.7 1.9.9 2.1-2.1-.9-1.9.7-1.7z"/></svg></button>
       <span class="live-dot" title="Indexer connected"></span>
     </header>
 
@@ -113,6 +113,23 @@
         <p class="form-error" id="githubError"></p>
       </div>
       <p class="dialog-foot">Files are held temporarily by this server and cleared when it restarts. Do not upload private code to a public deployment you do not control.</p>
+    </form>
+  </dialog>
+
+  <dialog id="settingsDialog" class="settings-dialog" aria-labelledby="settingsTitle">
+    <form method="dialog" class="dialog-shell settings-shell">
+      <div class="dialog-head">
+        <div><small>VIEWER SETTINGS</small><h1 id="settingsTitle">Renderer details</h1></div>
+        <button class="close-button" value="cancel" aria-label="Close settings">×</button>
+      </div>
+      <div id="settingsContent"></div>
+      <div class="settings-note">
+        <span class="settings-note-icon" aria-hidden="true">⌁</span>
+        <p><strong>Built for large landscapes</strong><small>The map uses a single instanced WebGL2 draw call. Labels and source textures are streamed progressively as you move.</small></p>
+      </div>
+      <div class="settings-actions">
+        <button class="dialog-button" value="close">Done</button>
+      </div>
     </form>
   </dialog>
   <input id="folderFallback" type="file" webkitdirectory multiple hidden>

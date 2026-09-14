@@ -201,6 +201,22 @@ button.source-card:hover { border-color: #5a8f7e; background: #2d312f; }
 .github-row button { border: 1px solid #4d9b7e; border-radius: 6px; padding: 0 14px; color: #dff7ee; background: #287158; cursor: pointer; }
 .form-error { grid-column: 1 / -1; min-height: 16px; margin: 5px 0 -5px; color: var(--danger); font-size: 11px; }
 .dialog-foot { margin: 15px 2px 0; color: #6e746f; font-size: 10px; }
+.settings-dialog { width: min(460px, calc(100vw - 30px)); }
+.settings-shell { padding: 22px; }
+.settings-status { display: flex; align-items: center; justify-content: space-between; margin: -3px 0 13px; padding: 9px 11px; border: 1px solid #3b4540; border-radius: 7px; background: #202422; }
+.settings-status span { display: flex; align-items: center; gap: 7px; color: #d9e2dd; font-weight: 600; }
+.settings-status i { width: 7px; height: 7px; border-radius: 50%; background: var(--green); box-shadow: 0 0 0 3px rgba(41,201,151,.1); }
+.settings-status small { color: #747c77; font-size: 9px; letter-spacing: .07em; }
+.settings-grid { padding: 12px 2px; }
+.settings-note { display: grid; grid-template-columns: 32px 1fr; gap: 10px; align-items: start; margin-top: 14px; padding: 11px; border: 1px solid #363b38; border-radius: 7px; background: #292c2a; }
+.settings-note-icon { width: 32px; height: 32px; display: grid; place-items: center; border-radius: 6px; color: #75c9aa; background: #202422; font-size: 16px; }
+.settings-note p { margin: 0; }
+.settings-note strong, .settings-note small { display: block; }
+.settings-note strong { color: #d9deda; font-size: 11px; }
+.settings-note small { margin-top: 3px; color: #777e79; line-height: 1.45; }
+.settings-actions { display: flex; justify-content: flex-end; margin-top: 17px; }
+.dialog-button { min-width: 74px; height: 32px; padding: 0 14px; border: 1px solid #4d8bc5; border-radius: 6px; color: #e4f2ff; background: #2c608d; cursor: pointer; }
+.dialog-button:hover { border-color: #6aa9df; background: #3471a5; }
 
 @media (max-width: 900px) {
   :root { --panel-width: 280px; }

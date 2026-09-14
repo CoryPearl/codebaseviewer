@@ -576,7 +576,12 @@ $('#homeButton').addEventListener('click',()=>{selectFile(null);fitScene();});
 $('#mapButton').addEventListener('click',fitScene);
 $('#layersButton').addEventListener('click',()=>{showLegend=!showLegend;$('#legend').classList.toggle('open',showLegend);$('#layersButton').classList.toggle('active',showLegend);});
 $('#paletteButton').addEventListener('click',()=>{paletteIndex=(paletteIndex+1)%palettes.length;computeLayout();buildLegend();renderInspector();renderHistory();});
-$('#settingsButton').addEventListener('click',()=>{selectFile(null);switchTab('inspector');$('#inspectHint').hidden=true;$('#inspectContent').innerHTML=`<div class="entity-title"><small>Renderer</small><h2>WebGL2 performance</h2></div><div class="meta-grid"><span>display refresh</span><b>${$('#fps').textContent.split('·')[0]}</b><span>render instances</span><b>${format(layoutItems.length)}</b><span>pixel ratio</span><b>${renderer.dpr.toFixed(2)}×</b><span>geometry uploads</span><b>static</b><span>camera updates</span><b>GPU uniforms</b></div><p class="panel-hint" style="margin-top:12px">The map uses one instanced draw call. Labels and source details appear progressively as you zoom.</p>`;});
+const settingsDialog=$('#settingsDialog');
+$('#settingsButton').addEventListener('click',()=>{
+  $('#settingsContent').innerHTML=`<div class="settings-status"><span><i></i>WebGL2 active</span><small>${renderer.mode.toUpperCase()} landscape</small></div><div class="meta-grid settings-grid"><span>display refresh</span><b>${$('#fps').textContent.split('·')[0]}</b><span>render instances</span><b>${format(layoutItems.length)}</b><span>indexed files</span><b>${format(files.length)}</b><span>pixel ratio</span><b>${renderer.dpr.toFixed(2)}×</b><span>geometry uploads</span><b>static</b><span>camera updates</span><b>GPU uniforms</b></div>`;
+  if(!settingsDialog.open)settingsDialog.showModal();
+});
+settingsDialog.addEventListener('click',event=>{if(event.target===settingsDialog)settingsDialog.close();});
 
 function buildLegend(){const legend=$('#legend');legend.innerHTML=Object.entries(layerLabels).map(([key,label])=>`<button type="button" data-legend-layer="${key}"><span><i style="background:${palettes[paletteIndex][key]}"></i>${label}</span><b>${format(sceneStats.layers.get(key)||0)}</b></button>`).join('');legend.querySelectorAll('[data-legend-layer]').forEach(row=>row.addEventListener('click',()=>{selectFile(null);expandedCoverageLayer=row.dataset.legendLayer;coverageActiveIndex=-1;showLegend=false;legend.classList.remove('open');$('#layersButton').classList.remove('active');switchTab('inspector');renderInspector();requestAnimationFrame(()=>$('#coverageFileList')?.focus({preventScroll:true}));}));}
 
