@@ -194,7 +194,8 @@ dialog::backdrop { background: rgba(8,10,9,.7); backdrop-filter: blur(5px); }
 .dialog-head { display: flex; align-items: start; justify-content: space-between; margin-bottom: 17px; }
 .dialog-head small { color: #b6b6b6; font-size: 9px; font-weight: 600; letter-spacing: .18em; }
 .dialog-head h1 { margin: 8px 0 0; font-size: 27px; font-weight: 550; letter-spacing: -.04em; }
-.close-button { width: 30px; height: 30px; border: 0; border-radius: 6px; background: transparent; color: #919191; font-size: 21px; cursor: pointer; }
+.close-button { width: 30px; height: 30px; flex-shrink: 0; display: grid; place-items: center; padding: 0; border: 0; border-radius: 6px; background: transparent; color: #919191; cursor: pointer; }
+.close-button svg { display: block; width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; }
 .close-button:hover { background: #313131; color: #fff; }
 .source-card { width: 100%; margin-top: 12px; padding: 18px; border: 1px solid #454545; border-radius: 12px; background: #ffffff03; color: inherit; text-align: left; }
 button.source-card { display: flex; align-items: center; gap: 12px; cursor: pointer; }
@@ -282,6 +283,7 @@ button.source-card:hover { border-color: #787878; background: #2f2f2f; }
 .shortcut-guide div { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; }
 kbd { font: 10px/1.5 ui-monospace, monospace; border: 1px solid #4b4b4b; border-radius: 4px; padding: 1px 5px; color: #d2d2d2; background: #1d1d1d; }
 button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible, [role="tab"]:focus-visible { outline: 2px solid #bbbbbb; outline-offset: 3px; }
+html[data-input-method="pointer"] button:focus { outline: none; }
 button { transition: background-color .15s, border-color .15s, color .15s; }
 button:active { filter: brightness(.93); }
 ::selection { background: #67676766; color: #f1f1f1; }

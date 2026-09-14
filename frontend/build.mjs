@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url';
 
 const frontendDir = dirname(fileURLToPath(import.meta.url));
 const outputDir = join(frontendDir, 'dist');
-const staticFiles = ['index.html', 'styles.css', 'app.js', 'renderer.js', 'favicon.svg'];
+const staticFiles = ['index.html', 'styles.css', 'app.js', 'api.mjs', 'renderer.js', 'favicon.svg'];
 let backendUrl = (process.env.BACKEND_URL || 'http://127.0.0.1:4177').trim().replace(/\/+$/, '');
 
 if (process.env.VERCEL && !process.env.BACKEND_URL) {
