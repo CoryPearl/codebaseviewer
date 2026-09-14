@@ -2,6 +2,8 @@
 
 A framework-free browser codebase explorer inspired by Rik Arends' large-codebase landscape demo. The repository is split into a vanilla JavaScript/WebGL2 frontend and a standalone Rust API backend.
 
+![Codebase Viewer showing a source-code landscape with a file inspector](demo.png)
+
 ## Repository layout
 
 - `frontend/`: static HTML, CSS, JavaScript, WebGL renderer, favicon, and Vercel build script
